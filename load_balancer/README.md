@@ -56,7 +56,6 @@ A real-time single-page application built with React 19, Vite, and Tailwind CSS 
 - **Tailwind CSS v4** (via `@tailwindcss/vite` plugin)
 - **Recharts** — Area, Line, and Pie charts
 - **React Router DOM v7** — client-side routing
-- **Lucide React** — icons
 
 ### Pages
 
