@@ -45,21 +45,8 @@ LoadC/
 
 ---
 
-## Phases
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | React Load Balancer Dashboard | ✅ Complete |
-| 2 | C Decision Engine | ✅ Complete |
-| 3 | Docker Backend Servers | 🔜 Planned |
-| 4 | Node.js Bridge Layer | 🔜 Planned |
-| 5 | Edge Caching Integration | 🔜 Planned |
-| 6 | PostgreSQL Metrics Persistence | 🔜 Planned |
-| 7 | Load Testing | 🔜 Planned |
-
----
-
-## Phase 1 — React Load Balancer Dashboard
+## Phase 1 React Load Balancer Dashboard
 
 A real-time single-page application built with React 19, Vite, and Tailwind CSS v4. Provides live visibility into the load balancer's state via mock data that mirrors the real engine's output format, ready to be swapped for live WebSocket data in Phase 4.
 
