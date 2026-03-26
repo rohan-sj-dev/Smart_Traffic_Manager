@@ -10,8 +10,8 @@ A C programming course project implementing an intelligent HTTP load balancer wi
 LoadC/
 ├── engine/                  # C decision engine (core algorithms)
 │   ├── src/
-│   │   ├── main.c           # Entry point — JSON stdin/stdout message loop
-│   │   ├── server_pool.c/h  # Server registry with health tracking
+│   │   ├── main.c           # Entry point — JSON stdin/stdout loop
+│   │   ├── server_pool.c/h  # Server registry with health track
 │   │   ├── load_balancer.c/h# Weighted Least Connections algorithm
 │   │   ├── cache.c/h        # LRU edge cache (doubly linked list + hash table)
 │   │   ├── predictor.c/h    # EMA traffic predictor with spike detection
@@ -57,7 +57,7 @@ A real-time single-page application built with React 19, Vite, and Tailwind CSS 
 - **Recharts** — Area, Line, and Pie charts
 - **React Router DOM v7** — client-side routing
 
-### Pages
+### Pages(To be implemented)
 
 | Route | Page | Description |
 |-------|------|-------------|
