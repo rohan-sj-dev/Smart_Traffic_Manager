@@ -2,8 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-void scaler_init(AutoScaler *s, int min_servers, int max_servers,
-                 double up_threshold, double down_threshold, int cooldown) {
+void scaler_init(AutoScaler *s, int min_servers, int max_servers,double up_threshold, double down_threshold, int cooldown) {
     s->min_servers = min_servers > 1 ? min_servers : 1;
     s->max_servers = max_servers > s->min_servers ? max_servers : 10;
     s->current_count = s->min_servers;
@@ -21,7 +20,7 @@ void scaler_destroy(AutoScaler *s) {
     compat_mutex_destroy(&s->lock);
 }
 
-static void record_event(AutoScaler *s, ScaleEventType type,
+void record_event(AutoScaler *s, ScaleEventType type,
                           int from, int to, double load, const char *reason) {
     ScaleEvent *ev = &s->events[s->event_index];
     ev->type = type;
@@ -41,7 +40,7 @@ int scaler_evaluate(AutoScaler *s, Predictor *p) {
     time_t now = time(NULL);
     int delta = 0;
 
-    /* Check cooldown */
+
     if (difftime(now, s->last_scale_time) < s->cooldown_seconds) {
         compat_mutex_unlock(&p->lock);
         compat_mutex_unlock(&s->lock);
@@ -51,11 +50,11 @@ int scaler_evaluate(AutoScaler *s, Predictor *p) {
     double load = p->predicted_load;
     bool spike = p->spike_detected;
 
-    /* Scale up decision */
+
     if (load > s->scale_up_threshold || spike) {
         if (s->current_count < s->max_servers) {
             int old = s->current_count;
-            /* Scale aggressively on spikes */
+
             if (spike && load > 90.0) {
                 delta = 2;
             } else {
@@ -70,7 +69,7 @@ int scaler_evaluate(AutoScaler *s, Predictor *p) {
             record_event(s, SCALE_EVENT_UP, old, s->current_count, load, reason);
         }
     }
-    /* Scale down decision */
+
     else if (load < s->scale_down_threshold && p->trend == TREND_FALLING) {
         if (s->current_count > s->min_servers) {
             int old = s->current_count;

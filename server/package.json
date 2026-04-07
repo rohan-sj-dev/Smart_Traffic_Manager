@@ -1,0 +1,14 @@
+{
+  "name": "loadc-backend-server",
+  "version": "1.0.0",
+  "description": "Backend server simulating heavy workloads (CPU, ML, image processing)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "start:all": "node start-all.js",
+    "test": "node test-endpoints.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

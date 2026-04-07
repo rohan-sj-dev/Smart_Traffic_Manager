@@ -1,0 +1,14 @@
+{
+  "name": "loadc-bridge",
+  "version": "1.0.0",
+  "description": "Node.js bridge: React frontend <-> C engine <-> backend servers",
+  "main": "bridge.js",
+  "scripts": {
+    "start": "node bridge.js",
+    "dev": "node bridge.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "express": "^5.1.0"
+  }
+}

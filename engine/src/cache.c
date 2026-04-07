@@ -42,19 +42,17 @@ void move_to_head(Cache *cache, Node *node) {
     if (!cache->tail) cache->tail = node;
 }
 
-/* Remove node from LRU list (does NOT free or remove from hash) */
-static void detach_node(Cache *cache, Node *node) {
+void detach_node(Cache *cache, Node *node) {
     if (node->prev) node->prev->next = node->next;
     else cache->head = node->next;
     if (node->next) node->next->prev = node->prev;
     else cache->tail = node->prev;
     node->prev = NULL;
     node->next = NULL;
-    free(node);
 }
 
-/* Remove node from hash table */
-static void hash_remove(Cache *cache, Node *node) {
+
+void hash_remove(Cache *cache, Node *node) {
     unsigned int idx = hash_key(node->key);
     Node *cur = cache->hash_table[idx];
     Node *prev_hash = NULL;
@@ -69,8 +67,8 @@ static void hash_remove(Cache *cache, Node *node) {
     }
 }
 
-/* Find a node in the hash table */
-static Node *hash_find(Cache *cache, const char *key) {
+
+Node *hash_find(Cache *cache, const char *key) {
     unsigned int idx = hash_key(key);
     Node *cur = cache->hash_table[idx];
     while (cur) {
@@ -80,15 +78,14 @@ static Node *hash_find(Cache *cache, const char *key) {
     return NULL;
 }
 
-/* Insert node into hash table */
-static void hash_insert(Cache *cache, Node *node) {
+void hash_insert(Cache *cache, Node *node) {
     unsigned int idx = hash_key(node->key);
     node->hash_next = cache->hash_table[idx];
     cache->hash_table[idx] = node;
 }
 
-/* Evict the tail (least recently used) node */
-static void evict_tail(Cache *cache) {
+
+void evict_tail(Cache *cache) {
     if (!cache->tail) return;
     Node *victim = cache->tail;
     detach_node(cache, victim);
@@ -134,9 +131,9 @@ bool cache_get(Cache *cache, const char *key, char *value_out, size_t value_out_
         compat_mutex_unlock(&cache->lock);
         return false;
     }
-    /* Check TTL */
+
     if (node->ttl_seconds > 0 && difftime(time(NULL), node->created_at) > node->ttl_seconds) {
-        /* Expired — remove it */
+
         detach_node(cache, node);
         hash_remove(cache, node);
         free(node);
@@ -155,11 +152,8 @@ bool cache_get(Cache *cache, const char *key, char *value_out, size_t value_out_
     return true;
 }
 
-void cache_put(Cache *cache, const char *key, const char *value,
-               size_t size, int ttl_seconds) {
+void cache_put(Cache *cache, const char *key, const char *value,size_t size, int ttl_seconds) {
     compat_mutex_lock(&cache->lock);
-
-    /* Check if key already exists */
     Node *existing = hash_find(cache, key);
     if (existing) {
         snprintf(existing->value, CACHE_VAL_LEN, "%s", value);
@@ -171,7 +165,7 @@ void cache_put(Cache *cache, const char *key, const char *value,
         return;
     }
 
-    /* Evict if at capacity */
+
     while (cache->count >= cache->capacity) {
         evict_tail(cache);
     }
@@ -182,7 +176,6 @@ void cache_put(Cache *cache, const char *key, const char *value,
         return;
     }
 
-    /* Insert at head */
     node->next = cache->head;
     if (cache->head) cache->head->prev = node;
     cache->head = node;
@@ -264,7 +257,6 @@ cJSON *cache_top_items_json(Cache *cache, int n) {
     return arr;
 }
 
-/* Convenience functions */
 int cache_size(Cache *cache) {
     return cache->count;
 }

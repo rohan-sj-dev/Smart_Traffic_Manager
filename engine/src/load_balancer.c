@@ -7,12 +7,31 @@ Server *get_best_server(ServerPool *pool) {
     Server *best = NULL;
     double best_score = DBL_MAX;
 
+    /* First pass: prefer healthy servers */
     for (int i = 0; i < pool->count; i++) {
         Server *s = &pool->servers[i];
         if (s->status != healthy) continue;
         if (s->active_connections >= s->max_connections) continue;
 
-        double score = (double)s->active_connections / s->weight;
+        double wlc = (double)s->active_connections / s->weight;
+        /* Tiebreaker: use compute_score (lower = better) when WLC scores match */
+        double score = wlc * 1000.0 + compute_score(s) * 0.001;
+        if (score < best_score) {
+            best_score = score;
+            best = s;
+        }
+    }
+    if (best) return best;
+
+    /* Fallback: accept degraded servers (skip only overloaded) */
+    best_score = DBL_MAX;
+    for (int i = 0; i < pool->count; i++) {
+        Server *s = &pool->servers[i];
+        if (s->status == overloaded) continue;
+        if (s->active_connections >= s->max_connections) continue;
+
+        double wlc = (double)s->active_connections / s->weight;
+        double score = wlc * 1000.0 + compute_score(s) * 0.001;
         if (score < best_score) {
             best_score = score;
             best = s;

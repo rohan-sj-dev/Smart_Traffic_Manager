@@ -28,8 +28,6 @@ void metrics_record_request(MetricsCollector *m, double latency_ms, bool is_erro
         m->interval_errors++;
         m->lifetime_errors++;
     }
-
-    /* Update cache stats in the latest history entry */
     if (m->history_count > 0) {
         int last = (m->history_index - 1 + METRICS_HISTORY_SIZE) % METRICS_HISTORY_SIZE;
         if (cache_hit) m->history[last].cache_hits++;
@@ -39,7 +37,6 @@ void metrics_record_request(MetricsCollector *m, double latency_ms, bool is_erro
     compat_mutex_unlock(&m->lock);
 }
 
-/* Comparison function for qsort */
 static int cmp_double(const void *a, const void *b) {
     double da = *(const double *)a;
     double db = *(const double *)b;
@@ -66,7 +63,7 @@ void metrics_flush_interval(MetricsCollector *m, int active_servers, double cpu,
         snap->avg_latency_ms = 0.0;
     }
 
-    /* P99 calculation */
+
     if (m->interval_latency_count > 0) {
         qsort(m->interval_latencies, (size_t)m->interval_latency_count,
               sizeof(double), cmp_double);
@@ -77,15 +74,13 @@ void metrics_flush_interval(MetricsCollector *m, int active_servers, double cpu,
         snap->p99_latency_ms = 0.0;
     }
 
-    /* Carry over cache stats from previous snapshot if needed */
+
     snap->cache_hits = 0;
     snap->cache_misses = 0;
 
-    /* Advance circular buffer */
     m->history_index = (m->history_index + 1) % METRICS_HISTORY_SIZE;
     if (m->history_count < METRICS_HISTORY_SIZE) m->history_count++;
 
-    /* Reset interval counters */
     m->interval_requests = 0;
     m->interval_errors = 0;
     m->interval_latency_sum = 0.0;

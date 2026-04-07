@@ -21,8 +21,8 @@ void predictor_destroy(Predictor *p) {
     compat_mutex_destroy(&p->lock);
 }
 
-/* Compute mean of values in the window */
-static double window_mean(Predictor *p) {
+
+double window_mean(Predictor *p) {
     if (p->window_count == 0) return 0.0;
     double sum = 0.0;
     int count = p->window_count < PREDICTOR_WINDOW_SIZE ? p->window_count : PREDICTOR_WINDOW_SIZE;
@@ -32,7 +32,8 @@ static double window_mean(Predictor *p) {
     return sum / count;
 }
 
-/* Compute standard deviation of values in the window */
+
+
 static double window_stddev(Predictor *p) {
     if (p->window_count < 2) return 0.0;
     double mean = window_mean(p);

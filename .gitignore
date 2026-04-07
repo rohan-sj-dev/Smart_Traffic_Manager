@@ -1,0 +1,11 @@
+node_modules/
+engine/build/
+engine_remote/
+server/node_modules/
+*.exe
+*.o
+
+# Docker (optional deployment — project runs without it via server/start-all.js)
+docker-compose.yml
+server/Dockerfile
+server/.dockerignore
