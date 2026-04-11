@@ -12,6 +12,7 @@
  *   - remove_server:   { type, server_id }
  *   - cache_put:       { type, key, value, size, ttl }
  *   - cache_get:       { type, key }
+ *   - cache_remove:    { type, key }
  *   - get_status:      { type }
  *   - shutdown:        { type }
  *
@@ -219,6 +220,23 @@ static void handle_cache_get(cJSON *msg) {
     cJSON_Delete(resp);
 }
 
+/* Handle: cache_remove */
+static void handle_cache_remove(cJSON *msg) {
+    cJSON *key = cJSON_GetObjectItem(msg, "key");
+    if (!key || !key->valuestring) {
+        send_error("cache_remove: missing key");
+        return;
+    }
+    cache_remove(&g_cache, key->valuestring);
+}
+
+/* Handle: set_server_count — sync scaler's internal counter with bridge reality */
+static void handle_set_server_count(cJSON *msg) {
+    cJSON *count = cJSON_GetObjectItem(msg, "count");
+    if (!count) return;
+    scaler_set_count(&g_scaler, count->valueint);
+}
+
 /* Handle: get_status — return full engine state */
 static void handle_get_status(void) {
     cJSON *status = cJSON_CreateObject();
@@ -352,6 +370,10 @@ static void process_message(const char *line) {
         handle_cache_put(msg);
     } else if (strcmp(t, "cache_get") == 0) {
         handle_cache_get(msg);
+    } else if (strcmp(t, "cache_remove") == 0) {
+        handle_cache_remove(msg);
+    } else if (strcmp(t, "set_server_count") == 0) {
+        handle_set_server_count(msg);
     } else if (strcmp(t, "get_status") == 0) {
         handle_get_status();
     } else if (strcmp(t, "shutdown") == 0) {
@@ -374,7 +396,7 @@ int main(void) {
     server_pool_init(&g_pool);
     cache_init(&g_cache, 1024);           /* 1024 entry cache */
     predictor_init(&g_predictor, 0.3);    /* alpha = 0.3 */
-    scaler_init(&g_scaler, 2, 10, 80.0, 30.0, 30);  /* min=2, max=10, cooldown=30s */
+    scaler_init(&g_scaler, 3, 10, 80.0, 30.0, 30);  /* min=3, max=10, cooldown=30s */
     metrics_init(&g_metrics);
 
     /* Send startup message */

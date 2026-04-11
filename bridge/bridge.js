@@ -1,22 +1,45 @@
-const { spawn } = require('child_process');
+const { spawn, fork } = require('child_process');
 const http = require('http');
 const path = require('path');
 const express = require('express');
 const { WebSocketServer } = require('ws');
+const db = require('./db');
 
 const BRIDGE_PORT = 4000;
 const ENGINE_PATH = path.join(__dirname, '..', 'engine', 'build', 'engine.exe');
 
-const BACKENDS = [
+const INITIAL_BACKENDS = [
     { id: 'server-alpha', name: 'Alpha', ip: '127.0.0.1', port: 3001, weight: 1.0, max_connections: 100 },
     { id: 'server-beta',  name: 'Beta',  ip: '127.0.0.1', port: 3002, weight: 1.0, max_connections: 100 },
     { id: 'server-gamma', name: 'Gamma', ip: '127.0.0.1', port: 3003, weight: 1.0, max_connections: 100 },
 ];
 
+/* Live server pool — starts with initial 3, grows/shrinks via autoscaler */
+const BACKENDS = [...INITIAL_BACKENDS];
+const dynamicProcesses = new Map();   // id → child_process
+const SERVER_SCRIPT = path.join(__dirname, '..', 'server', 'index.js');
+let nextPort = 3004;
+const SCALE_NAMES = ['Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta', 'Iota', 'Kappa'];
+let scaleNameIdx = 0;
+const MIN_SERVERS = 3;   // never scale below initial backends
+const MAX_SERVERS = 10;
+
 const WORKLOAD_ENDPOINTS = ['/cpu', '/ml', '/image', '/data', '/api/train', '/api/predict', '/api/datasets'];
 const HEALTH_POLL_MS = 2000;
 const STATUS_POLL_MS = 1000;
-const TRAFFIC_INTERVAL_MS = 1500;
+const TRAFFIC_INTERVAL_MS = 1;
+
+/* Endpoint-specific TTLs (seconds) — static/cacheable get longer TTLs */
+const ENDPOINT_TTL = {
+    '/data':          120,
+    '/api/datasets':  120,
+    '/api/predict':    30,
+    '/cpu':            10,
+    '/ml':             15,
+    '/image':          20,
+    '/api/train':       0,   // never cache (mutating)
+};
+const DEFAULT_TTL = 60;
 
 
 let engine = null;
@@ -24,6 +47,7 @@ let engineReady = false;
 let engineBuffer = '';
 let requestCounter = 0;
 const pendingRequests = new Map();
+const pendingMethods = new Map();   // request_id → method
 const serverHealth = new Map();
 const recentLogs = [];         
 const MAX_LOGS = 200;
@@ -42,7 +66,7 @@ app.use((_req, res, next) => {
 });
 
 app.get('/api/health', (_req, res) => {
-    res.json({ bridge: 'ok', engine: engineReady, backends: BACKENDS.length });
+    res.json({ bridge: 'ok', engine: engineReady, backends: BACKENDS.length, db: db.isConnected() });
 });
 
 app.get('/api/status', (_req, res) => {
@@ -57,7 +81,15 @@ app.post('/api/request', (req, res) => {
     const { url, method } = req.body || {};
     if (!url) return res.status(400).json({ error: 'url required' });
     const id = `req-${++requestCounter}`;
-    sendToEngine({ type: 'route_request', request_id: id, url, method: method || 'GET' });
+    const m = (method || 'GET').toUpperCase();
+
+    /* Invalidate cache for non-GET */
+    if (m !== 'GET') {
+        sendToEngine({ type: 'cache_remove', key: url });
+    }
+
+    pendingMethods.set(id, m);
+    sendToEngine({ type: 'route_request', request_id: id, url, method: m });
 
     const timer = setTimeout(() => {
         pendingRequests.delete(id);
@@ -91,7 +123,10 @@ wss.on('connection', (ws) => {
             if (msg.type === 'get_status') sendToEngine({ type: 'get_status' });
             if (msg.type === 'route_request') {
                 const id = `req-${++requestCounter}`;
-                sendToEngine({ type: 'route_request', request_id: id, url: msg.url || '/data', method: msg.method || 'GET' });
+                const m = (msg.method || 'GET').toUpperCase();
+                if (m !== 'GET') sendToEngine({ type: 'cache_remove', key: msg.url || '/data' });
+                pendingMethods.set(id, m);
+                sendToEngine({ type: 'route_request', request_id: id, url: msg.url || '/data', method: m });
             }
         } catch (_) {}
     });
@@ -190,9 +225,30 @@ function handleEngineMessage(line) {
             broadcast({ type: 'status', data: buildDashboardState() });
             break;
 
-        case 'scale_command':
-            broadcast({ type: 'scaling_event', data: msg });
+        case 'scale_command': {
+            const beforeCount = BACKENDS.length;
+            handleScaleCommand(msg);
+            const afterCount = BACKENDS.length;
+            broadcast({ type: 'scaling_event', data: {
+                action: msg.action,
+                delta: msg.delta,
+                serversBefore: beforeCount,
+                serversAfter: afterCount,
+                predictedLoad: msg.current_count,
+                trigger: msg.action === 'scale_up' ? 'high_predicted_load' : 'low_predicted_load',
+                timestamp: new Date().toISOString(),
+            } });
+            db.logScalingEvent({
+                action: msg.action || 'unknown',
+                serversBefore: beforeCount,
+                serversAfter: afterCount,
+                predictedLoad: msg.current_count,
+                spikeDetected: false,
+                reason: msg.action === 'scale_up' ? 'high predicted load / spike' : 'low predicted load',
+            });
+            console.log(`[autoscale] ${msg.action} delta=${msg.delta} servers: ${beforeCount} → ${afterCount}`);
             break;
+        }
 
         case 'error':
             console.error(`[engine error] ${msg.message}`);
@@ -206,9 +262,11 @@ function handleEngineMessage(line) {
 
 
 function registerBackends() {
-    for (const b of BACKENDS) {
+    for (const b of INITIAL_BACKENDS) {
         sendToEngine({ type: 'add_server', id: b.id, name: b.name, ip: b.ip, port: b.port, weight: b.weight, max_connections: b.max_connections });
     }
+    /* Sync scaler's internal counter with actual server count */
+    sendToEngine({ type: 'set_server_count', count: BACKENDS.length });
 }
 
 function forwardToBackend(routeMsg) {
@@ -217,6 +275,8 @@ function forwardToBackend(routeMsg) {
     if (!backend) return;
 
     const url = routeMsg.url || '/data';
+    const method = pendingMethods.get(routeMsg.request_id) || 'GET';
+    pendingMethods.delete(routeMsg.request_id);
     const start = Date.now();
 
     httpGet(`http://${backend.ip}:${backend.port}${url}`)
@@ -230,8 +290,12 @@ function forwardToBackend(routeMsg) {
                 status_code: 200,
                 cache_hit: false,
             });
-            sendToEngine({ type: 'cache_put', key: `${serverId}:${url}`, value: JSON.stringify(result).slice(0, 512), ttl: 60 });
-            addLog({ url, cacheHit: false, statusCode: 200, latency, serverRouted: serverId, method: 'GET' });
+            /* Cache only GET responses with a positive TTL */
+            const ttl = ENDPOINT_TTL[url] ?? DEFAULT_TTL;
+            if (method === 'GET' && ttl > 0) {
+                sendToEngine({ type: 'cache_put', key: url, value: JSON.stringify(result).slice(0, 512), size: 512, ttl });
+            }
+            addLog({ url, cacheHit: false, statusCode: 200, latency, serverRouted: serverId, method });
         })
         .catch((err) => {
             const latency = Date.now() - start;
@@ -243,7 +307,7 @@ function forwardToBackend(routeMsg) {
                 status_code: 500,
                 cache_hit: false,
             });
-            addLog({ url, cacheHit: false, statusCode: 500, latency, serverRouted: serverId, method: 'GET' });
+            addLog({ url, cacheHit: false, statusCode: 500, latency, serverRouted: serverId, method });
         });
 }
 
@@ -252,7 +316,6 @@ function pollHealth() {
         httpGet(`http://${b.ip}:${b.port}/health`)
             .then((data) => {
                 serverHealth.set(b.id, data);
-
                 const jitter = (Math.random() - 0.5) * 10;
                 const cpu = Math.min(95, Math.max(1, (data.cpu ?? 5) + jitter));
                 const memory = Math.min(95, Math.max(5, 30 + (data.active_connections ?? 0) * 2 + jitter));
@@ -270,24 +333,116 @@ function pollHealth() {
     }
 }
 
-// ─── Traffic Generator ───────────────────────────────────────────────────────
-
 function generateTraffic() {
     if (!engineReady) return;
     const url = WORKLOAD_ENDPOINTS[Math.floor(Math.random() * WORKLOAD_ENDPOINTS.length)];
     const id = `req-${++requestCounter}`;
-    sendToEngine({ type: 'route_request', request_id: id, url, method: 'GET' });
+
+    /* ~15% of requests are non-GET (POST/PUT/DELETE) — invalidate cache */
+    const roll = Math.random();
+    let method = 'GET';
+    if (roll < 0.08) method = 'POST';
+    else if (roll < 0.12) method = 'PUT';
+    else if (roll < 0.15) method = 'DELETE';
+
+    if (method !== 'GET') {
+        sendToEngine({ type: 'cache_remove', key: url });
+    }
+
+    pendingMethods.set(id, method);
+    sendToEngine({ type: 'route_request', request_id: id, url, method });
 }
 
-// ─── Dashboard State Builder ─────────────────────────────────────────────────
-
-const trafficHistory = [];  // { time, actual, predicted }
+const trafficHistory = [];
 const scalingEvents = [];
+
+/* ---- Dynamic server spawning / killing ---- */
+
+function spawnServer() {
+    const port = nextPort++;
+    const name = SCALE_NAMES[scaleNameIdx++ % SCALE_NAMES.length];
+    const id = `server-${name.toLowerCase()}`;
+
+    console.log(`[autoscale] Spawning ${id} on port ${port}`);
+    const child = fork(SERVER_SCRIPT, [], {
+        env: { ...process.env, SERVER_ID: id, PORT: String(port) },
+        stdio: 'pipe',
+    });
+
+    child.on('error', (err) => console.error(`[autoscale] ${id} error: ${err.message}`));
+    child.on('exit', (code) => {
+        console.log(`[autoscale] ${id} exited (code=${code})`);
+        dynamicProcesses.delete(id);
+    });
+
+    const backend = { id, name, ip: '127.0.0.1', port, weight: 1.0, max_connections: 100 };
+    BACKENDS.push(backend);
+    dynamicProcesses.set(id, child);
+
+    /* Tell engine about the new server (after a short delay for it to bind the port) */
+    setTimeout(() => {
+        sendToEngine({ type: 'add_server', id, name, ip: '127.0.0.1', port, weight: 1.0, max_connections: 100 });
+    }, 1500);
+
+    return backend;
+}
+
+function killServer() {
+    /* Only kill dynamically spawned servers — never the initial 3 */
+    const dynamicIds = [...dynamicProcesses.keys()];
+    if (dynamicIds.length === 0) return null;
+
+    const id = dynamicIds[dynamicIds.length - 1];   // remove most recently added
+    const child = dynamicProcesses.get(id);
+
+    console.log(`[autoscale] Killing ${id}`);
+    sendToEngine({ type: 'remove_server', server_id: id });
+
+    if (child && !child.killed) child.kill();
+    dynamicProcesses.delete(id);
+
+    const idx = BACKENDS.findIndex(b => b.id === id);
+    if (idx !== -1) BACKENDS.splice(idx, 1);
+
+    return id;
+}
+
+function handleScaleCommand(msg) {
+    const action = msg.action;
+    const delta = msg.delta || 0;
+    const serversBefore = BACKENDS.length;
+
+    if (action === 'scale_up' && delta > 0) {
+        const canAdd = Math.min(delta, MAX_SERVERS - BACKENDS.length);
+        for (let i = 0; i < canAdd; i++) spawnServer();
+    } else if (action === 'scale_down' && delta < 0) {
+        const canRemove = Math.min(Math.abs(delta), BACKENDS.length - MIN_SERVERS);
+        for (let i = 0; i < canRemove; i++) killServer();
+    }
+
+    const serversAfter = BACKENDS.length;
+
+    /* Sync engine scaler counter with actual pool size */
+    sendToEngine({ type: 'set_server_count', count: serversAfter });
+
+    const trigger = action === 'scale_up' ? 'high_predicted_load' : 'low_predicted_load';
+    const event = {
+        id: scalingEvents.length + 1,
+        timestamp: new Date().toISOString(),
+        action,
+        serversBefore,
+        serversAfter,
+        predictedLoad: msg.current_count,
+        trigger,
+        reason: trigger,
+    };
+    scalingEvents.push(event);
+    if (scalingEvents.length > 100) scalingEvents.shift();
+}
 
 function buildDashboardState() {
     const s = lastStatus || {};
 
-    // Build servers array matching frontend shape
     const servers = (s.servers || []).map((srv) => {
         const health = serverHealth.get(srv.id) || {};
         return {
@@ -307,7 +462,8 @@ function buildDashboardState() {
         };
     });
 
-    // Cache stats
+
+
     const cache = s.cache || {};
     const totalHits = cache.total_hits ?? 0;
     const totalMisses = cache.total_misses ?? 0;
@@ -332,7 +488,8 @@ function buildDashboardState() {
         })),
     };
 
-    // Predictions
+
+
     const pred = s.prediction || {};
     const scaling = s.scaling || {};
     const predictions = {
@@ -347,7 +504,6 @@ function buildDashboardState() {
         windowSize: pred.window_size ?? 10,
     };
 
-    // Traffic history (keep last 60 data points)
     trafficHistory.push({
         time: new Date().toISOString(),
         timestamp: Date.now(),
@@ -356,7 +512,6 @@ function buildDashboardState() {
     });
     if (trafficHistory.length > 60) trafficHistory.shift();
 
-    // Metrics
     const met = s.metrics || {};
     const sys = s.system || {};
     const metrics = {
@@ -372,7 +527,7 @@ function buildDashboardState() {
         currentLoad: predictions.currentLoad,
     };
 
-    // Scaling config
+
     const scalingConfig = {
         minServers: scaling.min_servers ?? 1,
         maxServers: scaling.max_servers ?? 10,
@@ -387,10 +542,10 @@ function buildDashboardState() {
     return { servers, cacheStats, predictions, trafficHistory: [...trafficHistory], metrics, scalingEvents: [...scalingEvents], scalingConfig, logs: recentLogs.slice(-50) };
 }
 
-// ─── Log ring buffer ─────────────────────────────────────────────────────────
+
 
 let logId = 0;
-function addLog({ url, cacheHit, statusCode, latency, serverRouted, method }) {
+function addLog({ url, cacheHit, statusCode, latency, serverRouted, method, requestId }) {
     const entry = {
         id: ++logId,
         timestamp: new Date().toISOString(),
@@ -405,9 +560,18 @@ function addLog({ url, cacheHit, statusCode, latency, serverRouted, method }) {
     recentLogs.push(entry);
     if (recentLogs.length > MAX_LOGS) recentLogs.shift();
     broadcast({ type: 'log', data: entry });
-}
 
-// ─── HTTP helper ─────────────────────────────────────────────────────────────
+    /* Async DB write */
+    db.logRequest({
+        requestId: requestId || null,
+        method: entry.method,
+        url: entry.url,
+        serverId: entry.serverRouted,
+        statusCode: entry.statusCode,
+        latencyMs: entry.latency,
+        cacheHit: entry.cacheHit,
+    });
+}
 
 function httpGet(url) {
     return new Promise((resolve, reject) => {
@@ -423,12 +587,11 @@ function httpGet(url) {
     });
 }
 
-// ─── Boot ────────────────────────────────────────────────────────────────────
-
 const startTime = Date.now();
 
-httpServer.listen(BRIDGE_PORT, () => {
+httpServer.listen(BRIDGE_PORT, async () => {
     console.log(`[bridge] HTTP + WS server on http://localhost:${BRIDGE_PORT}`);
+    await db.init();
     startEngine();
 
     // Poll health every 2s
@@ -441,6 +604,23 @@ httpServer.listen(BRIDGE_PORT, () => {
 
     // Generate traffic every 1.5s
     setInterval(generateTraffic, TRAFFIC_INTERVAL_MS);
+
+    // Persist metric snapshot to DB every 5s
+    setInterval(() => {
+        if (!lastStatus) return;
+        const state = buildDashboardState();
+        db.logMetricSnapshot({
+            totalRequests: state.metrics.totalRequests,
+            rps: state.metrics.requestsPerSecond,
+            avgLatency: state.metrics.avgLatency,
+            p99Latency: state.metrics.p99Latency,
+            cacheHitRate: state.metrics.cacheHitRate,
+            cacheEntries: state.cacheStats.totalEntries,
+            activeServers: state.metrics.activeServers,
+            predictedLoad: state.predictions.predictedLoad,
+            trend: state.predictions.trend,
+        });
+    }, 5000);
 });
 
 // Graceful shutdown
@@ -449,5 +629,10 @@ process.on('SIGINT', () => {
     if (engine && engine.stdin.writable) {
         sendToEngine({ type: 'shutdown' });
     }
-    setTimeout(() => process.exit(0), 1000);
+    /* Kill all dynamically spawned servers */
+    for (const [id, child] of dynamicProcesses) {
+        if (child && !child.killed) child.kill();
+    }
+    dynamicProcesses.clear();
+    db.close().finally(() => setTimeout(() => process.exit(0), 1000));
 });

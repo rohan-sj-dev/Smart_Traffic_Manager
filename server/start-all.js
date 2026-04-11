@@ -28,7 +28,6 @@ process.on('SIGINT', () => {
     process.exit(0);
 });
 
-// Also handle Windows close
 process.on('SIGTERM', () => {
     for (const c of children) c.kill();
     process.exit(0);

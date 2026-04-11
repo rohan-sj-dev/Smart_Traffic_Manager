@@ -1,12 +1,3 @@
-/**
- * test-endpoints.js — Automated test for all backend server endpoints
- *
- * Usage:
- *   1. Start servers first:  npm run start:all
- *   2. In another terminal:  npm test
- *
- * Tests all endpoints on all 3 server instances.
- */
 const http = require('http');
 
 const PORTS = [3001, 3002, 3003];

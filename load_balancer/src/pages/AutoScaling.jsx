@@ -20,15 +20,18 @@ function ActionBadge({ action }) {
 }
 
 function TriggerBadge({ trigger }) {
+  const label = trigger || 'auto';
   const colors = {
     ema_threshold: 'text-indigo-400',
     spike_detected: 'text-red-400',
     cooldown_expired: 'text-amber-400',
     underutilized: 'text-cyan-400',
+    high_predicted_load: 'text-amber-400',
+    low_predicted_load: 'text-cyan-400',
   };
   return (
-    <span className={`text-xs font-mono ${colors[trigger] || 'text-gray-400'}`}>
-      {trigger.replace('_', ' ')}
+    <span className={`text-xs font-mono ${colors[label] || 'text-gray-400'}`}>
+      {label.replace(/_/g, ' ')}
     </span>
   );
 }
@@ -133,7 +136,7 @@ export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh })
                       {evt.predictedLoad}%
                     </span>
                   </td>
-                  <td className="px-4 py-2.5"><TriggerBadge trigger={evt.trigger} /></td>
+                  <td className="px-4 py-2.5"><TriggerBadge trigger={evt.trigger || evt.reason} /></td>
                 </tr>
               ))}
             </tbody>
