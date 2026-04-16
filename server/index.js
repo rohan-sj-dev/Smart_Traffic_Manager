@@ -123,9 +123,9 @@ function fibonacci(n) {
 app.get('/cpu', (req, res) => {
     const start = Date.now();
 
-    const matrixResult = matrixMultiply(100);
+    const matrixResult = matrixMultiply(50);
     const factors = primeFactors(1234567890);
-    const fib = fibonacci(35);
+    const fib = fibonacci(30);
 
     const processingTime = Date.now() - start;
     respond(res, {
@@ -187,7 +187,7 @@ function gradientDescent(numSamples, learningRate, epochs) {
 app.get('/ml', (req, res) => {
     const start = Date.now();
 
-    const model = gradientDescent(500, 0.01, 1000);
+    const model = gradientDescent(200, 0.01, 500);
 
     const processingTime = Date.now() - start;
     respond(res, {
@@ -265,8 +265,8 @@ function sobelEdgeDetect(pixels, width, height) {
 
 app.get('/image', (req, res) => {
     const start = Date.now();
-    const width = 512;
-    const height = 512;
+    const width = 256;
+    const height = 256;
 
     const raw = generateImage(width, height);
     const blurred = gaussianBlur(raw, width, height);
@@ -303,7 +303,7 @@ app.get('/api/train', (req, res) => {
     const start = Date.now();
 
     // Multi-feature dataset: y = 2*x1 + 3*x2 - 1.5*x3 + 10
-    const numSamples = 1000;
+    const numSamples = 500;
     const numFeatures = 3;
     const trueWeights = [2, 3, -1.5];
     const trueBias = 10;
@@ -326,7 +326,7 @@ app.get('/api/train', (req, res) => {
     const weights = new Array(numFeatures).fill(0).map(() => Math.random() - 0.5);
     let bias = 0;
     const lr = 0.001;
-    const epochs = 2000;
+    const epochs = 800;
     const lossHistory = [];
 
     for (let epoch = 0; epoch < epochs; epoch++) {

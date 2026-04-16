@@ -286,8 +286,9 @@ static void *tick_thread(void *arg) {
 #endif
     (void)arg;
     while (g_running) {
-        /* Compute aggregate CPU and memory */
+        /* Compute aggregate CPU, memory, and connection utilization */
         double total_cpu = 0.0, total_mem = 0.0;
+        int total_active_conns = 0, total_max_conns = 0;
         compat_mutex_lock(&g_pool.lock);
         int active = 0;
         for (int i = 0; i < g_pool.count; i++) {
@@ -295,26 +296,46 @@ static void *tick_thread(void *arg) {
                 active++;
                 total_cpu += g_pool.servers[i].cpu;
                 total_mem += g_pool.servers[i].memory;
+                total_active_conns += g_pool.servers[i].active_connections;
+                total_max_conns += g_pool.servers[i].max_connections;
             }
         }
         compat_mutex_unlock(&g_pool.lock);
 
+        double avg_cpu = 0.0, avg_mem = 0.0, conn_util = 0.0;
         if (active > 0) {
-            total_cpu /= active;
-            total_mem /= active;
+            avg_cpu = total_cpu / active;
+            avg_mem = total_mem / active;
+            total_cpu = avg_cpu;
+            total_mem = avg_mem;
+        }
+        if (total_max_conns > 0) {
+            conn_util = ((double)total_active_conns / total_max_conns) * 100.0;
         }
 
         /* Flush metrics interval */
         metrics_flush_interval(&g_metrics, active, total_cpu, total_mem);
 
-        /* Get latest RPS for predictor */
+        /* Get latest RPS for composite score */
         cJSON *current = metrics_current_to_json(&g_metrics);
         cJSON *rps_json = cJSON_GetObjectItem(current, "rps");
         double rps = rps_json ? rps_json->valuedouble : 0.0;
         cJSON_Delete(current);
 
-        /* Update predictor with current RPS */
-        predictor_update(&g_predictor, rps);
+        /* Composite load score (0-100): weighted blend of CPU, memory,
+           connection utilization, and RPS normalized per server.
+           Weights: CPU 35%, Memory 25%, Connections 25%, RPS 15% */
+        double rps_per_server = active > 0 ? rps / active : 0.0;
+        double rps_score = rps_per_server > 50.0 ? 100.0 : (rps_per_server / 50.0) * 100.0;
+        double composite = 0.35 * avg_cpu
+                         + 0.25 * avg_mem
+                         + 0.25 * conn_util
+                         + 0.15 * rps_score;
+        if (composite > 100.0) composite = 100.0;
+        if (composite < 0.0)   composite = 0.0;
+
+        /* Update predictor with composite load score */
+        predictor_update(&g_predictor, composite);
 
         /* Evaluate auto-scaler */
         int delta = scaler_evaluate(&g_scaler, &g_predictor);
@@ -396,7 +417,7 @@ int main(void) {
     server_pool_init(&g_pool);
     cache_init(&g_cache, 1024);           /* 1024 entry cache */
     predictor_init(&g_predictor, 0.3);    /* alpha = 0.3 */
-    scaler_init(&g_scaler, 3, 10, 80.0, 30.0, 30);  /* min=3, max=10, cooldown=30s */
+    scaler_init(&g_scaler, 3, 10, 70.0, 25.0, 20);  /* min=3, max=10, up>70%, down<25%, cooldown=20s */
     metrics_init(&g_metrics);
 
     /* Send startup message */

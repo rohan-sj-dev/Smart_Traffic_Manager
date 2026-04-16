@@ -89,9 +89,9 @@ double predictor_update(Predictor *p, double observed) {
     if (p->confidence > 1.0) p->confidence = 1.0;
 
     /* Recommended action */
-    if (p->predicted_load > 80.0 || p->spike_detected) {
+    if (p->predicted_load > 70.0 || p->spike_detected) {
         p->action = ACTION_SCALE_UP;
-    } else if (p->predicted_load < 30.0 && p->trend == TREND_FALLING) {
+    } else if (p->predicted_load < 25.0 && p->trend == TREND_FALLING) {
         p->action = ACTION_SCALE_DOWN;
     } else {
         p->action = ACTION_NONE;

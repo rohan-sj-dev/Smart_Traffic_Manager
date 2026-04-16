@@ -27,7 +27,9 @@ const MAX_SERVERS = 10;
 const WORKLOAD_ENDPOINTS = ['/cpu', '/ml', '/image', '/data', '/api/train', '/api/predict', '/api/datasets'];
 const HEALTH_POLL_MS = 2000;
 const STATUS_POLL_MS = 1000;
-const TRAFFIC_INTERVAL_MS = 1;
+const TRAFFIC_INTERVAL_MS = 500;
+const MAX_INFLIGHT = 20;   // max concurrent requests to backends
+let inflight = 0;
 
 /* Endpoint-specific TTLs (seconds) — static/cacheable get longer TTLs */
 const ENDPOINT_TTL = {
@@ -279,6 +281,7 @@ function forwardToBackend(routeMsg) {
     pendingMethods.delete(routeMsg.request_id);
     const start = Date.now();
 
+    inflight++;
     httpGet(`http://${backend.ip}:${backend.port}${url}`)
         .then((result) => {
             const latency = Date.now() - start;
@@ -308,7 +311,8 @@ function forwardToBackend(routeMsg) {
                 cache_hit: false,
             });
             addLog({ url, cacheHit: false, statusCode: 500, latency, serverRouted: serverId, method });
-        });
+        })
+        .finally(() => { inflight--; });
 }
 
 function pollHealth() {
@@ -335,6 +339,7 @@ function pollHealth() {
 
 function generateTraffic() {
     if (!engineReady) return;
+    if (inflight >= MAX_INFLIGHT) return;   // backpressure
     const url = WORKLOAD_ENDPOINTS[Math.floor(Math.random() * WORKLOAD_ENDPOINTS.length)];
     const id = `req-${++requestCounter}`;
 
@@ -575,7 +580,7 @@ function addLog({ url, cacheHit, statusCode, latency, serverRouted, method, requ
 
 function httpGet(url) {
     return new Promise((resolve, reject) => {
-        const req = http.get(url, { timeout: 8000 }, (res) => {
+        const req = http.get(url, { timeout: 30000 }, (res) => {
             let body = '';
             res.on('data', (chunk) => body += chunk);
             res.on('end', () => {
