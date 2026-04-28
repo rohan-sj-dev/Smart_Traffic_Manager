@@ -1,7 +1,22 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSimulator } from "../hooks/useSimulator";
 
 export default function ImageProcessing() {
   const [file, setFile] = useState(null);
+  const [runs, setRuns] = useState(10);
+  const [running, setRunning] = useState(false);
+  const { connected, simulateLoad } = useSimulator();
+
+  useEffect(() => {
+    let interval;
+    if (running && connected) {
+      interval = setInterval(() => {
+        const count = Math.min(1000, parseInt(runs, 10) || 1);
+        simulateLoad("/image", count, "POST");
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [running, connected, runs, simulateLoad]);
 
   return (
     <div className="p-6 text-white max-w-7xl mx-auto">
@@ -68,6 +83,8 @@ export default function ImageProcessing() {
             </label>
             <input
                 type="number"
+                value={runs}
+                onChange={(e) => setRuns(e.target.value)}
                 placeholder="Runs"
                 className="w-full p-3 rounded-lg bg-[#020617] border border-gray-800 focus:outline-none focus:border-indigo-500"
             />
@@ -76,8 +93,8 @@ export default function ImageProcessing() {
         </div>
 
         <div className="flex gap-4 mt-6">
-          <button className="bg-green-500 px-5 py-2 rounded-lg">Start</button>
-          <button className="bg-red-500 px-5 py-2 rounded-lg">Stop</button>
+          <button onClick={() => setRunning(true)} className="bg-green-500 px-5 py-2 rounded-lg">Start</button>
+          <button onClick={() => setRunning(false)} className="bg-red-500 px-5 py-2 rounded-lg">Stop</button>
         </div>
 
       </div>
@@ -91,9 +108,11 @@ export default function ImageProcessing() {
         )}
       </div>
 
-      {/* Logs */}
-      <div className="bg-[#0f172a] p-5 rounded-2xl border border-gray-800 h-40 text-gray-400">
-        [INFO] Waiting for image task...
+      {/* Status */}
+      <div className="bg-[#0f172a] p-5 rounded-2xl border border-gray-800 h-24 text-gray-400">
+        <p>Status: <span className={`font-medium ${!connected ? "text-amber-400" : running ? "text-green-400" : "text-red-400"}`}>
+          {!connected ? "Connecting to Engine..." : running ? "Image Workload Active" : "Stopped"}
+        </span></p>
       </div>
 
     </div>

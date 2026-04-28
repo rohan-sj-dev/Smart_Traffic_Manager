@@ -116,7 +116,7 @@ export function generateScalingEvents(count = 10) {
     serversAfter: randInt(1, 6),
     predictedLoad: +rand(20, 95).toFixed(1),
     trigger: pick(['ema_threshold', 'spike_detected', 'cooldown_expired', 'underutilized']),
-  }));
+  })).reverse();
 }
 
 // Generate auto-scaling config
@@ -146,7 +146,7 @@ export function generateLogs(count = 50) {
     latency: randInt(5, 800),
     cacheHit: Math.random() > 0.5,
     clientIp: `192.168.1.${randInt(1, 254)}`,
-  }));
+  })).reverse();
 }
 
 // Generate overall system metrics

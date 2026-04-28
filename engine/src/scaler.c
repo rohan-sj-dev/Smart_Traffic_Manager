@@ -71,12 +71,11 @@ int scaler_evaluate(AutoScaler *s, Predictor *p) {
     }
 
     /* Scale down if load is falling below threshold, OR if load has stabilised
-       well below threshold (< 60% of down_threshold). The second condition
+       below threshold. The second condition
        handles the common case where load reaches a steady-state floor and
        trend is STABLE rather than FALLING, which would otherwise prevent
        scale-down indefinitely. */
-    else if (load < s->scale_down_threshold &&
-             (p->trend == TREND_FALLING || load < s->scale_down_threshold * 0.6)) {
+    else if (load < s->scale_down_threshold && p->trend != TREND_RISING) {
         if (s->current_count > s->min_servers) {
             int old = s->current_count;
             delta = -1;

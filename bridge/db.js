@@ -6,6 +6,7 @@
  * If no DB is configured the module silently no-ops.
  */
 
+require('dotenv').config();
 const { Pool } = require('pg');
 
 const DB_URL = process.env.DATABASE_URL || null;

@@ -26,13 +26,12 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
   const [history, setHistory] = useState([]);
 
   const recentSimLogs = useMemo(() => {
-    return [...logs]
+    return logs
       .filter((l) => history.some((h) => h.url === l.url))
-      .slice(-30)
-      .reverse();
+      .slice(0, 30);
   }, [logs, history]);
 
-  const recentScaling = useMemo(() => [...scalingEvents].slice(-10).reverse(), [scalingEvents]);
+  const recentScaling = useMemo(() => scalingEvents.slice(0, 10), [scalingEvents]);
 
   const pushHistory = (entry) => {
     setHistory((prev) => [{ ...entry, timestamp: Date.now() }, ...prev].slice(0, 20));
@@ -46,7 +45,7 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
 
   const handleSimulateLoad = () => {
     if (!endpoint.trim()) return;
-    const n = Math.max(1, Math.min(500, parseInt(count, 10) || 1));
+    const n = Math.max(1, Math.min(5000, parseInt(count, 10) || 1));
     const ok = onSimulateLoad(endpoint.trim(), n, method);
     pushHistory({ kind: 'load', url: endpoint.trim(), method, count: n, sent: ok });
   };
@@ -97,7 +96,7 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
             <input
               type="number"
               min={1}
-              max={500}
+              max={5000}
               value={count}
               onChange={(e) => setCount(parseInt(e.target.value, 10) || 1)}
               className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 font-mono focus:outline-none focus:border-indigo-500"

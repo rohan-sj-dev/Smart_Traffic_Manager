@@ -4,6 +4,7 @@ engine_remote/
 server/node_modules/
 *.exe
 *.o
+.env
 
 # Docker (optional deployment — project runs without it via server/start-all.js)
 docker-compose.yml

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSimulator } from "../hooks/useSimulator";
 
 export default function MLModel() {
   const [model, setModel] = useState("logistic");
@@ -7,10 +8,22 @@ export default function MLModel() {
   const [batchSize, setBatchSize] = useState(32);
   const [concurrency, setConcurrency] = useState(1);
   const [running, setRunning] = useState(false);
+  const { connected, simulateLoad } = useSimulator();
+
+  useEffect(() => {
+    let interval;
+    if (running && connected) {
+      // Send a batch of requests every second while running
+      interval = setInterval(() => {
+        const count = Math.min(1000, parseInt(batchSize, 10) * parseInt(concurrency, 10));
+        simulateLoad("/api/train", count, "POST");
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [running, connected, batchSize, concurrency, simulateLoad]);
 
   const startTraining = () => {
     setRunning(true);
-    console.log("Starting ML training workload...");
   };
 
   const stopTraining = () => {
@@ -128,11 +141,10 @@ export default function MLModel() {
 
       </div>
 
-      {/* Status */}
       <div className="bg-[#0f172a] p-4 rounded-xl mb-6">
         <p className="text-gray-400">Status</p>
-        <p className={`mt-2 font-medium ${running ? "text-green-400" : "text-red-400"}`}>
-          {running ? "Running" : "Stopped"}
+        <p className={`mt-2 font-medium ${!connected ? "text-amber-400" : running ? "text-green-400" : "text-red-400"}`}>
+          {!connected ? "Connecting to Engine..." : running ? "Training Load Active" : "Stopped"}
         </p>
       </div>
 

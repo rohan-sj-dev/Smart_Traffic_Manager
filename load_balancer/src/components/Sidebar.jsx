@@ -62,7 +62,7 @@ export default function Sidebar({ connected }) {
           {connected ? (
             <>
               <Wifi className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs text-emerald-400 font-medium">Live — Mock Data</span>
+              <span className="text-xs text-emerald-400 font-medium">Live</span>
             </>
           ) : (
             <>

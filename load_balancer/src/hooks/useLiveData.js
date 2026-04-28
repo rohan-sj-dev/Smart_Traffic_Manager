@@ -14,6 +14,23 @@ import {
 const WS_URL = 'ws://localhost:4000';
 const RECONNECT_MS = 3000;
 
+const roundDecimals = (obj) => {
+  if (typeof obj === 'number') {
+    return Number.isInteger(obj) ? obj : Number(obj.toFixed(2));
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(roundDecimals);
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const result = {};
+    for (const key in obj) {
+      result[key] = roundDecimals(obj[key]);
+    }
+    return result;
+  }
+  return obj;
+};
+
 /**
  * Real-time data hook.
  * Connects to the bridge WebSocket for live data.
@@ -73,7 +90,8 @@ export function useLiveData(intervalMs = 1000) {
 
     ws.onmessage = (evt) => {
       try {
-        const msg = JSON.parse(evt.data);
+        let msg = JSON.parse(evt.data);
+        msg = roundDecimals(msg);
         switch (msg.type) {
           case 'status': {
             const d = msg.data;
@@ -82,16 +100,16 @@ export function useLiveData(intervalMs = 1000) {
             if (d.trafficHistory) setTrafficHistory(d.trafficHistory);
             if (d.cacheStats) setCacheStats(d.cacheStats);
             if (d.predictions) setPredictions(d.predictions);
-            if (d.scalingEvents) setScalingEvents(d.scalingEvents);
+            if (d.scalingEvents) setScalingEvents([...d.scalingEvents].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
             if (d.scalingConfig) setScalingConfig(d.scalingConfig);
-            if (d.logs) setLogs(d.logs);
+            if (d.logs) setLogs([...d.logs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
             break;
           }
           case 'log':
-            setLogs(prev => [...prev.slice(-199), msg.data]);
+            setLogs(prev => [msg.data, ...prev.slice(0, 199)]);
             break;
           case 'scaling_event':
-            setScalingEvents(prev => [...prev, { id: prev.length + 1, ...msg.data }]);
+            setScalingEvents(prev => [{ id: prev.length + 1, ...msg.data }, ...prev]);
             break;
           case 'engine_status':
             setConnected(msg.connected);

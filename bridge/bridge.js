@@ -386,13 +386,14 @@ function spawnServer() {
         dynamicProcesses.delete(id);
     });
 
-    const backend = { id, name, ip: '127.0.0.1', port, weight: 1.0, max_connections: 100 };
+    const weight = Number(Math.random().toFixed(2));
+    const backend = { id, name, ip: '127.0.0.1', port, weight, max_connections: 100 };
     BACKENDS.push(backend);
     dynamicProcesses.set(id, child);
 
     /* Tell engine about the new server (after a short delay for it to bind the port) */
     setTimeout(() => {
-        sendToEngine({ type: 'add_server', id, name, ip: '127.0.0.1', port, weight: 1.0, max_connections: 100 });
+        sendToEngine({ type: 'add_server', id, name, ip: '127.0.0.1', port, weight, max_connections: 100 });
     }, 1500);
 
     return backend;
@@ -590,7 +591,18 @@ function buildDashboardState() {
         spikeThreshold: scaling.spike_threshold ?? 2.0,
     };
 
-    return { servers, cacheStats, predictions, trafficHistory: [...trafficHistory], metrics, scalingEvents: [...scalingEvents], scalingConfig, logs: recentLogs.slice(-50) };
+    const rawState = { 
+        servers, 
+        cacheStats, 
+        predictions, 
+        trafficHistory: [...trafficHistory], 
+        metrics, 
+        scalingEvents: [...scalingEvents], 
+        scalingConfig, 
+        logs: recentLogs.slice(-50) 
+    };
+
+    return rawState;
 }
 
 
