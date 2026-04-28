@@ -9,9 +9,9 @@ const BRIDGE_PORT = 4000;
 const ENGINE_PATH = path.join(__dirname, '..', 'engine', 'build', 'engine.exe');
 
 const INITIAL_BACKENDS = [
-    { id: 'server-alpha', name: 'Alpha', ip: '127.0.0.1', port: 3001, weight: 1.0, max_connections: 100 },
-    { id: 'server-beta',  name: 'Beta',  ip: '127.0.0.1', port: 3002, weight: 1.0, max_connections: 100 },
-    { id: 'server-gamma', name: 'Gamma', ip: '127.0.0.1', port: 3003, weight: 1.0, max_connections: 100 },
+    { id: 'server-alpha', name: 'Alpha', ip: '127.0.0.1', port: 3001, weight: 1.0, max_connections: 100 },  // full capacity
+    { id: 'server-beta',  name: 'Beta',  ip: '127.0.0.1', port: 3002, weight: 0.6, max_connections: 60  },  // 60% capacity
+    { id: 'server-gamma', name: 'Gamma', ip: '127.0.0.1', port: 3003, weight: 0.3, max_connections: 30  },  // 30% capacity
 ];
 
 /* Live server pool — starts with initial 3, grows/shrinks via autoscaler */
@@ -21,8 +21,8 @@ const SERVER_SCRIPT = path.join(__dirname, '..', 'server', 'index.js');
 let nextPort = 3004;
 const SCALE_NAMES = ['Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta', 'Iota', 'Kappa'];
 let scaleNameIdx = 0;
-const MIN_SERVERS = 3;   // never scale below initial backends
-const MAX_SERVERS = 10;
+let MIN_SERVERS = 3;   // mutable via WS `set_scaling_limits`
+let MAX_SERVERS = 10;
 
 const WORKLOAD_ENDPOINTS = ['/cpu', '/ml', '/image', '/data', '/api/train', '/api/predict', '/api/datasets'];
 const HEALTH_POLL_MS = 2000;
@@ -129,6 +129,12 @@ wss.on('connection', (ws) => {
                 if (m !== 'GET') sendToEngine({ type: 'cache_remove', key: msg.url || '/data' });
                 pendingMethods.set(id, m);
                 sendToEngine({ type: 'route_request', request_id: id, url: msg.url || '/data', method: m });
+            }
+            if (msg.type === 'set_scaling_limits') {
+                applyScalingLimits(msg.minServers, msg.maxServers);
+            }
+            if (msg.type === 'simulate_load') {
+                simulateLoad(msg.url, msg.count, msg.method);
             }
         } catch (_) {}
     });
@@ -412,6 +418,45 @@ function killServer() {
     return id;
 }
 
+function applyScalingLimits(min, max) {
+    const newMin = Math.max(1, Math.min(20, parseInt(min, 10) || MIN_SERVERS));
+    const newMax = Math.max(newMin, Math.min(20, parseInt(max, 10) || MAX_SERVERS));
+    MIN_SERVERS = newMin;
+    MAX_SERVERS = newMax;
+    console.log(`[bridge] Scaling limits updated: min=${MIN_SERVERS} max=${MAX_SERVERS}`);
+
+    /* Enforce immediately if current count is outside new bounds */
+    while (BACKENDS.length > MAX_SERVERS) {
+        const removed = killServer();
+        if (!removed) break;
+    }
+    while (BACKENDS.length < MIN_SERVERS) spawnServer();
+
+    sendToEngine({ type: 'set_server_count', count: BACKENDS.length });
+    broadcast({ type: 'scaling_limits_updated', data: { minServers: MIN_SERVERS, maxServers: MAX_SERVERS } });
+}
+
+function simulateLoad(url, count, method) {
+    const target = (url || '/data').toString();
+    const n = Math.max(1, Math.min(500, parseInt(count, 10) || 10));
+    const m = (method || 'GET').toUpperCase();
+    console.log(`[bridge] Simulating ${n} ${m} requests to ${target}`);
+
+    let sent = 0;
+    const interval = setInterval(() => {
+        if (!engineReady || sent >= n) {
+            clearInterval(interval);
+            return;
+        }
+        if (inflight >= MAX_INFLIGHT) return;
+        const id = `sim-${++requestCounter}`;
+        if (m !== 'GET') sendToEngine({ type: 'cache_remove', key: target });
+        pendingMethods.set(id, m);
+        sendToEngine({ type: 'route_request', request_id: id, url: target, method: m });
+        sent++;
+    }, 50);
+}
+
 function handleScaleCommand(msg) {
     const action = msg.action;
     const delta = msg.delta || 0;
@@ -464,6 +509,7 @@ function buildDashboardState() {
             weight: srv.weight ?? 1.0,
             uptime: health.uptime ?? 0,
             totalRequests: srv.total_requests ?? srv.requests ?? 0,
+            emaLatency: srv.ema_latency ?? 0,
         };
     });
 
@@ -534,8 +580,8 @@ function buildDashboardState() {
 
 
     const scalingConfig = {
-        minServers: scaling.min_servers ?? 1,
-        maxServers: scaling.max_servers ?? 10,
+        minServers: MIN_SERVERS,
+        maxServers: MAX_SERVERS,
         currentServers: servers.length,
         scaleUpThreshold: scaling.scale_up_threshold ?? 80,
         scaleDownThreshold: scaling.scale_down_threshold ?? 30,

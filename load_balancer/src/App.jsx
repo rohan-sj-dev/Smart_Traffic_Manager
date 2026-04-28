@@ -1,4 +1,4 @@
-﻿import { Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import TrafficOverview from './pages/TrafficOverview';
 import Servers from './pages/Servers';
@@ -6,6 +6,7 @@ import Cache from './pages/Cache';
 import Predictions from './pages/Predictions';
 import AutoScaling from './pages/AutoScaling';
 import Logs from './pages/Logs';
+import Simulator from './pages/Simulator';
 import { useLiveData } from './hooks/useLiveData';
 
 export default function App() {
@@ -20,8 +21,31 @@ export default function App() {
           <Route path="/servers" element={<Servers servers={data.servers} />} />
           <Route path="/cache" element={<Cache cacheStats={data.cacheStats} />} />
           <Route path="/predictions" element={<Predictions predictions={data.predictions} trafficHistory={data.trafficHistory} />} />
-          <Route path="/autoscaling" element={<AutoScaling scalingEvents={data.scalingEvents} scalingConfig={data.scalingConfig} onRefresh={data.refreshScalingEvents} />} />
+          <Route
+            path="/autoscaling"
+            element={
+              <AutoScaling
+                scalingEvents={data.scalingEvents}
+                scalingConfig={data.scalingConfig}
+                onRefresh={data.refreshScalingEvents}
+                onApplyLimits={data.setScalingLimits}
+                connected={data.connected}
+              />
+            }
+          />
           <Route path="/logs" element={<Logs logs={data.logs} onRefresh={data.refreshLogs} />} />
+          <Route
+            path="/simulator"
+            element={
+              <Simulator
+                onSendRequest={data.sendCustomRequest}
+                onSimulateLoad={data.simulateLoad}
+                connected={data.connected}
+                logs={data.logs}
+                scalingEvents={data.scalingEvents}
+              />
+            }
+          />
         </Routes>
       </main>
     </div>

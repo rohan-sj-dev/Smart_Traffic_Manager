@@ -30,6 +30,7 @@ typedef struct {
     double cpu;
     double memory;
     double score;
+    double ema_latency;   /* EMA of response latency (ms), alpha=0.2 */
 } Server;
 
 typedef struct {
@@ -52,6 +53,7 @@ int server_pool_update_health(ServerPool *pool, const char *id,
 
 int server_pool_inc_connections(ServerPool *pool, const char *id);
 int server_pool_dec_connections(ServerPool *pool, const char *id);
+void server_pool_update_latency(ServerPool *pool, const char *id, double latency_ms);
 
 float compute_score(Server *s);
 void update_status(Server *s);

@@ -142,6 +142,30 @@ export function useLiveData(intervalMs = 1000) {
     }
   }, []);
 
+  const sendWs = useCallback((payload) => {
+    if (liveRef.current && wsRef.current?.readyState === 1) {
+      wsRef.current.send(JSON.stringify(payload));
+      return true;
+    }
+    return false;
+  }, []);
+
+  const setScalingLimits = useCallback((minServers, maxServers) => {
+    const ok = sendWs({ type: 'set_scaling_limits', minServers, maxServers });
+    if (!ok) {
+      setScalingConfig(prev => ({ ...prev, minServers, maxServers }));
+    }
+    return ok;
+  }, [sendWs]);
+
+  const sendCustomRequest = useCallback((url, method = 'GET') => {
+    return sendWs({ type: 'route_request', url, method });
+  }, [sendWs]);
+
+  const simulateLoad = useCallback((url, count, method = 'GET') => {
+    return sendWs({ type: 'simulate_load', url, count, method });
+  }, [sendWs]);
+
   return {
     connected,
     metrics,
@@ -154,5 +178,8 @@ export function useLiveData(intervalMs = 1000) {
     logs,
     refreshLogs,
     refreshScalingEvents,
+    setScalingLimits,
+    sendCustomRequest,
+    simulateLoad,
   };
 }

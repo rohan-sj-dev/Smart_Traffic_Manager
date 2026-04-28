@@ -9,6 +9,24 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const startTime = Date.now();
 let activeConnections = 0;
 
+/* ── Capacity profile ─────────────────────────────────────────────
+   SERVER_CAPACITY (0.1–1.0): simulates weaker/stronger hardware.
+   A capacity of 0.5 means:
+     - heavy endpoints take 2× longer (real blocking delay)
+     - CPU  reports as baseCPU  / capacity  (same work = more effort)
+     - Memory reports as baseMem / capacity  (less headroom)
+   This makes the load balancer naturally prefer higher-capacity servers.
+   ──────────────────────────────────────────────────────────────── */
+const CAPACITY = Math.min(1.0, Math.max(0.1, parseFloat(process.env.SERVER_CAPACITY || '1.0')));
+
+/* Synchronous busy-wait: simulates slower CPU for low-capacity servers */
+function capacityDelay(baseMs) {
+    if (CAPACITY >= 1.0) return;
+    const extraMs = Math.round(baseMs * (1.0 / CAPACITY - 1.0));
+    const end = Date.now() + extraMs;
+    while (Date.now() < end) { /* spin */ }
+}
+
 /* ΓöÇΓöÇ Middleware: track active connections ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 app.use((req, res, next) => {
     activeConnections++;
@@ -40,11 +58,17 @@ app.get('/health', (req, res) => {
     const freeMem = os.freemem();
     const memoryUsage = ((totalMem - freeMem) / totalMem) * 100;
 
+    /* Scale metrics by capacity: weaker servers appear more loaded.
+       CPU and memory are capped at 99 to stay realistic. */
+    const scaledCpu    = Math.min(99, cpuUsage  / CAPACITY);
+    const scaledMemory = Math.min(99, memoryUsage / CAPACITY);
+
     res.json({
         status: 'healthy',
         server_id: SERVER_ID,
-        cpu: Math.round(cpuUsage * 100) / 100,
-        memory: Math.round(memoryUsage * 100) / 100,
+        capacity: CAPACITY,
+        cpu: Math.round(scaledCpu * 100) / 100,
+        memory: Math.round(scaledMemory * 100) / 100,
         active_connections: activeConnections,
         uptime: Math.floor((Date.now() - startTime) / 1000),
         timestamp: Date.now()
@@ -126,6 +150,7 @@ app.get('/cpu', (req, res) => {
     const matrixResult = matrixMultiply(50);
     const factors = primeFactors(1234567890);
     const fib = fibonacci(30);
+    capacityDelay(30);   // weaker servers spin longer
 
     const processingTime = Date.now() - start;
     respond(res, {
@@ -188,6 +213,7 @@ app.get('/ml', (req, res) => {
     const start = Date.now();
 
     const model = gradientDescent(200, 0.01, 500);
+    capacityDelay(50);
 
     const processingTime = Date.now() - start;
     respond(res, {
@@ -271,6 +297,7 @@ app.get('/image', (req, res) => {
     const raw = generateImage(width, height);
     const blurred = gaussianBlur(raw, width, height);
     const { edges, max_gradient } = sobelEdgeDetect(blurred, width, height);
+    capacityDelay(60);
 
     // Compute stats
     let edgeSum = 0;
@@ -301,6 +328,7 @@ app.get('/image', (req, res) => {
    ================================================================ */
 app.get('/api/train', (req, res) => {
     const start = Date.now();
+    capacityDelay(80);
 
     // Multi-feature dataset: y = 2*x1 + 3*x2 - 1.5*x3 + 10
     const numSamples = 500;

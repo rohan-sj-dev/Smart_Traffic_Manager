@@ -7,6 +7,7 @@ import {
   Scaling,
   ScrollText,
   Activity,
+  Zap,
   Wifi,
   WifiOff,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
   { to: '/predictions', icon: BrainCircuit, label: 'Predictions' },
   { to: '/autoscaling', icon: Scaling, label: 'Auto-Scaling' },
   { to: '/logs', icon: ScrollText, label: 'Logs' },
+  { to: '/simulator', icon: Zap, label: 'Simulator' },
 ];
 
 export default function Sidebar({ connected }) {

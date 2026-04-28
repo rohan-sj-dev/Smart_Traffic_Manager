@@ -2,16 +2,16 @@ const { fork } = require('child_process');
 const path = require('path');
 
 const SERVERS = [
-    { id: 'server-alpha', port: 3001 },
-    { id: 'server-beta',  port: 3002 },
-    { id: 'server-gamma', port: 3003 }
+    { id: 'server-alpha', port: 3001, capacity: '1.0' },   // full speed
+    { id: 'server-beta',  port: 3002, capacity: '0.6' },   // 60% — 1.67× slower on heavy endpoints
+    { id: 'server-gamma', port: 3003, capacity: '0.3' },   // 30% — 3.3× slower on heavy endpoints
 ];
 
 const children = [];
 
 for (const srv of SERVERS) {
     const child = fork(path.join(__dirname, 'index.js'), [], {
-        env: { ...process.env, SERVER_ID: srv.id, PORT: String(srv.port) },
+        env: { ...process.env, SERVER_ID: srv.id, PORT: String(srv.port), SERVER_CAPACITY: srv.capacity },
         stdio: 'inherit'
     });
     children.push(child);

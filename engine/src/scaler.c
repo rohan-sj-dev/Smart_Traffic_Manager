@@ -70,13 +70,22 @@ int scaler_evaluate(AutoScaler *s, Predictor *p) {
         }
     }
 
-    else if (load < s->scale_down_threshold && p->trend == TREND_FALLING) {
+    /* Scale down if load is falling below threshold, OR if load has stabilised
+       well below threshold (< 60% of down_threshold). The second condition
+       handles the common case where load reaches a steady-state floor and
+       trend is STABLE rather than FALLING, which would otherwise prevent
+       scale-down indefinitely. */
+    else if (load < s->scale_down_threshold &&
+             (p->trend == TREND_FALLING || load < s->scale_down_threshold * 0.6)) {
         if (s->current_count > s->min_servers) {
             int old = s->current_count;
             delta = -1;
             s->current_count--;
             s->last_scale_time = now;
-            record_event(s, SCALE_EVENT_DOWN, old, s->current_count, load, "low_predicted_load");
+            const char *reason = p->trend == TREND_FALLING
+                ? "low_predicted_load"
+                : "sustained_low_load";
+            record_event(s, SCALE_EVENT_DOWN, old, s->current_count, load, reason);
         }
     }
 

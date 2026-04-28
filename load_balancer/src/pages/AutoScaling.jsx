@@ -1,4 +1,5 @@
-import { Scaling, ArrowUp, ArrowDown, Pause, Settings, RefreshCw } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Scaling, ArrowUp, ArrowDown, Pause, Settings, RefreshCw, Save, AlertCircle } from 'lucide-react';
 
 function ActionBadge({ action }) {
   const styles = {
@@ -36,7 +37,26 @@ function TriggerBadge({ trigger }) {
   );
 }
 
-export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh }) {
+export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh, onApplyLimits, connected }) {
+  const [minInput, setMinInput] = useState(scalingConfig.minServers);
+  const [maxInput, setMaxInput] = useState(scalingConfig.maxServers);
+  const [savedNote, setSavedNote] = useState(null);
+
+  useEffect(() => {
+    setMinInput(scalingConfig.minServers);
+    setMaxInput(scalingConfig.maxServers);
+  }, [scalingConfig.minServers, scalingConfig.maxServers]);
+
+  const dirty = minInput !== scalingConfig.minServers || maxInput !== scalingConfig.maxServers;
+  const invalid = minInput < 1 || maxInput < minInput || maxInput > 20;
+
+  const handleApply = () => {
+    if (invalid || !onApplyLimits) return;
+    const ok = onApplyLimits(minInput, maxInput);
+    setSavedNote(ok ? 'Limits sent to engine' : 'Engine offline — saved locally');
+    setTimeout(() => setSavedNote(null), 2500);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -51,6 +71,66 @@ export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh })
           <RefreshCw className="w-3.5 h-3.5" />
           Refresh
         </button>
+      </div>
+
+      {/* Editable Limits */}
+      <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Settings className="w-4 h-4 text-indigo-400" />
+            <h3 className="text-sm font-semibold text-white">Scaling Limits</h3>
+          </div>
+          {savedNote && (
+            <span className="text-xs text-emerald-400">{savedNote}</span>
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] text-gray-500 uppercase tracking-wider">Min Servers</span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={minInput}
+              onChange={(e) => setMinInput(parseInt(e.target.value, 10) || 1)}
+              className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 font-mono focus:outline-none focus:border-indigo-500"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] text-gray-500 uppercase tracking-wider">Max Servers</span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={maxInput}
+              onChange={(e) => setMaxInput(parseInt(e.target.value, 10) || 1)}
+              className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 font-mono focus:outline-none focus:border-indigo-500"
+            />
+          </label>
+          <button
+            onClick={handleApply}
+            disabled={!dirty || invalid}
+            className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              !dirty || invalid
+                ? 'bg-gray-800 border border-gray-700 text-gray-600 cursor-not-allowed'
+                : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+            }`}
+          >
+            <Save className="w-3.5 h-3.5" />
+            Apply Limits
+          </button>
+        </div>
+        {invalid && (
+          <p className="flex items-center gap-1.5 mt-3 text-xs text-red-400">
+            <AlertCircle className="w-3.5 h-3.5" />
+            Invalid: min ≥ 1 and max ≥ min, both ≤ 20.
+          </p>
+        )}
+        {!connected && (
+          <p className="mt-3 text-xs text-amber-400">
+            Engine offline — limits will only apply locally until reconnected.
+          </p>
+        )}
       </div>
 
       {/* Config Panel */}

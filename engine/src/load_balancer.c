@@ -14,7 +14,13 @@ Server *get_best_server(ServerPool *pool) {
 
         double wlc = (double)s->active_connections / s->weight;
 
-        double score = wlc * 1000.0 + compute_score(s) * 0.001;
+        /* EMA latency factor: normalize against 500ms reference.
+           A server averaging 50ms scores +5, one at 500ms scores +50.
+           This breaks ties at equal connection counts (idle servers)
+           and gently penalizes consistently slow backends under load. */
+        double latency_factor = s->ema_latency / 500.0;
+
+        double score = wlc * 1000.0 + latency_factor * 50.0 + compute_score(s) * 0.001;
         if (score < best_score) {
             best_score = score;
             best = s;
@@ -30,7 +36,8 @@ Server *get_best_server(ServerPool *pool) {
         if (s->active_connections >= s->max_connections) continue;
 
         double wlc = (double)s->active_connections / s->weight;
-        double score = wlc * 1000.0 + compute_score(s) * 0.001;
+        double latency_factor = s->ema_latency / 500.0;
+        double score = wlc * 1000.0 + latency_factor * 50.0 + compute_score(s) * 0.001;
         if (score < best_score) {
             best_score = score;
             best = s;

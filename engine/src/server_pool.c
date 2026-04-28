@@ -33,6 +33,7 @@ int add_server(ServerPool *pool, const char *id, const char *name,
     s->cpu = 0.0;
     s->memory = 0.0;
     s->score = 0.0;
+    s->ema_latency = 0.0;
     pool->count++;
     compat_mutex_unlock(&pool->lock);
     return 0;
@@ -103,6 +104,22 @@ int server_pool_dec_connections(ServerPool *pool, const char *id) {
     s->active_connections--;
     compat_mutex_unlock(&pool->lock);
     return 0;
+}
+
+/* Update EMA of response latency for a server.
+   alpha=0.2: slow-moving average — resists single outliers,
+   converges in ~10 requests. First observation seeds directly. */
+void server_pool_update_latency(ServerPool *pool, const char *id, double latency_ms) {
+    compat_mutex_lock(&pool->lock);
+    Server *s = server_pool_find(pool, id);
+    if (s) {
+        if (s->ema_latency == 0.0) {
+            s->ema_latency = latency_ms;  /* seed on first real observation */
+        } else {
+            s->ema_latency = 0.2 * latency_ms + 0.8 * s->ema_latency;
+        }
+    }
+    compat_mutex_unlock(&pool->lock);
 }
 
 /* Compute composite score: weighted blend of load, cpu, memory, and history */
@@ -204,6 +221,7 @@ cJSON *server_pool_to_json(ServerPool *pool) {
         cJSON_AddNumberToObject(obj, "cpu", s->cpu);
         cJSON_AddNumberToObject(obj, "memory", s->memory);
         cJSON_AddNumberToObject(obj, "score", s->score);
+        cJSON_AddNumberToObject(obj, "ema_latency", s->ema_latency);
         cJSON_AddItemToArray(arr, obj);
     }
     compat_mutex_unlock(&pool->lock);

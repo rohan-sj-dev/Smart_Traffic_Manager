@@ -102,17 +102,21 @@ static void handle_route_request(cJSON *msg) {
 /* Handle: request_done */
 static void handle_request_done(cJSON *msg) {
     cJSON *server_id = cJSON_GetObjectItem(msg, "server_id");
-    cJSON *latency = cJSON_GetObjectItem(msg, "latency_ms");
-    cJSON *status = cJSON_GetObjectItem(msg, "status_code");
+    cJSON *latency   = cJSON_GetObjectItem(msg, "latency_ms");
+    cJSON *status    = cJSON_GetObjectItem(msg, "status_code");
     cJSON *cache_hit = cJSON_GetObjectItem(msg, "cache_hit");
+
+    double lat     = latency   ? latency->valuedouble        : 0.0;
+    bool is_error  = status    && status->valueint >= 500;
+    bool hit       = cache_hit && cJSON_IsTrue(cache_hit);
 
     if (server_id && server_id->valuestring) {
         release_server(&g_pool, server_id->valuestring);
+        /* Update per-server EMA latency — skip cache hits, no backend was involved */
+        if (!hit && lat > 0.0) {
+            server_pool_update_latency(&g_pool, server_id->valuestring, lat);
+        }
     }
-
-    double lat = latency ? latency->valuedouble : 0.0;
-    bool is_error = status && status->valueint >= 500;
-    bool hit = cache_hit && cJSON_IsTrue(cache_hit);
 
     metrics_record_request(&g_metrics, lat, is_error, hit);
 }
