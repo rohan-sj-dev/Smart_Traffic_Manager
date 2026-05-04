@@ -55,11 +55,14 @@ int scaler_evaluate(AutoScaler *s, Predictor *p) {
         if (s->current_count < s->max_servers) {
             int old = s->current_count;
 
-            if (spike && load > 90.0) {
-                delta = 2;
-            } else {
-                delta = 1;
-            }
+            /* Proportional scale-up: more servers per tick when load is far above threshold.
+               Each 15 percentage points of overshoot adds another server. Spikes get a
+               +1 boost so a sudden burst escalates faster. */
+            double over = load - s->scale_up_threshold;
+            delta = (int)(over / 15.0) + 1;
+            if (spike) delta += 1;
+            if (delta < 1) delta = 1;
+
             if (s->current_count + delta > s->max_servers) {
                 delta = s->max_servers - s->current_count;
             }
@@ -78,8 +81,17 @@ int scaler_evaluate(AutoScaler *s, Predictor *p) {
     else if (load < s->scale_down_threshold && p->trend != TREND_RISING) {
         if (s->current_count > s->min_servers) {
             int old = s->current_count;
-            delta = -1;
-            s->current_count--;
+
+            /* Proportional scale-down: each 4 percentage points below threshold
+               removes another server. Lets the pool collapse quickly when traffic
+               vanishes instead of waiting cooldown × (current - min) seconds. */
+            double under = s->scale_down_threshold - load;
+            int magnitude = (int)(under / 4.0) + 1;
+            delta = -magnitude;
+            if (s->current_count + delta < s->min_servers) {
+                delta = s->min_servers - s->current_count;
+            }
+            s->current_count += delta;
             s->last_scale_time = now;
             const char *reason = p->trend == TREND_FALLING
                 ? "low_predicted_load"

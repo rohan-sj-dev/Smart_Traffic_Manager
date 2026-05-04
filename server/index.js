@@ -34,6 +34,23 @@ app.use((req, res, next) => {
     next();
 });
 
+/* Per-process CPU sampling.
+   Each server is a separate Node process, so process.cpuUsage() reports CPU
+   time used by THIS server alone. Busier processes report higher values; idle
+   ones near zero. Sampled every 1s so /health returns "% of a single core". */
+let prevCpu = process.cpuUsage();
+let prevHr = process.hrtime.bigint();
+let cpuPercent = 0;
+setInterval(() => {
+    const nowCpu = process.cpuUsage();
+    const nowHr = process.hrtime.bigint();
+    const elapsedNs = Number(nowHr - prevHr);
+    const totalUs = (nowCpu.user - prevCpu.user) + (nowCpu.system - prevCpu.system);
+    cpuPercent = elapsedNs > 0 ? (totalUs * 1000) / elapsedNs * 100 : 0;
+    prevCpu = nowCpu;
+    prevHr = nowHr;
+}, 1000);
+
 /* ΓöÇΓöÇ Helper: wrap response with timing + server id ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 function respond(res, result) {
     res.json({
@@ -47,28 +64,24 @@ function respond(res, result) {
    GET /health  ΓÇö  Health check endpoint
    ================================================================ */
 app.get('/health', (req, res) => {
-    const cpus = os.cpus();
-    const cpuUsage = cpus.reduce((acc, cpu) => {
-        const total = Object.values(cpu.times).reduce((a, b) => a + b, 0);
-        const idle = cpu.times.idle;
-        return acc + ((total - idle) / total) * 100;
-    }, 0) / cpus.length;
+    /* Per-process CPU%: capacity-scaled so weaker boxes report higher utilization
+       for the same workload. Cap at 99. */
+    const procCpu = Math.min(99, cpuPercent / CAPACITY);
 
-    const totalMem = os.totalmem();
-    const freeMem = os.freemem();
-    const memoryUsage = ((totalMem - freeMem) / totalMem) * 100;
-
-    /* Scale metrics by capacity: weaker servers appear more loaded.
-       CPU and memory are capped at 99 to stay realistic. */
-    const scaledCpu    = Math.min(99, cpuUsage  / CAPACITY);
-    const scaledMemory = Math.min(99, memoryUsage / CAPACITY);
+    /* Per-process memory: RSS as a fraction of a notional 256MB budget per
+       server, scaled by capacity. Memory naturally diverges across processes
+       because V8 heap growth is driven by per-process workload. */
+    const rssMB = process.memoryUsage().rss / (1024 * 1024);
+    const memBudgetMB = 256;
+    const procMem = Math.min(99, (rssMB / memBudgetMB) * 100 / CAPACITY);
 
     res.json({
         status: 'healthy',
         server_id: SERVER_ID,
         capacity: CAPACITY,
-        cpu: Math.round(scaledCpu * 100) / 100,
-        memory: Math.round(scaledMemory * 100) / 100,
+        cpu: Math.round(procCpu * 100) / 100,
+        memory: Math.round(procMem * 100) / 100,
+        rss_mb: Math.round(rssMB * 10) / 10,
         active_connections: activeConnections,
         uptime: Math.floor((Date.now() - startTime) / 1000),
         timestamp: Date.now()

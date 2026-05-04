@@ -23,6 +23,7 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
   const [endpoint, setEndpoint] = useState('/data');
   const [method, setMethod] = useState('GET');
   const [count, setCount] = useState(50);
+  const [duration, setDuration] = useState(0);
   const [history, setHistory] = useState([]);
 
   const recentSimLogs = useMemo(() => {
@@ -46,8 +47,15 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
   const handleSimulateLoad = () => {
     if (!endpoint.trim()) return;
     const n = Math.max(1, Math.min(5000, parseInt(count, 10) || 1));
-    const ok = onSimulateLoad(endpoint.trim(), n, method);
-    pushHistory({ kind: 'load', url: endpoint.trim(), method, count: n, sent: ok });
+    const dur = Math.max(0, Math.min(300, parseInt(duration, 10) || 0));
+    const ok = onSimulateLoad(endpoint.trim(), n, method, dur);
+    pushHistory({
+      kind: dur > 0 ? 'sustained' : 'burst',
+      url: endpoint.trim(),
+      method,
+      count: dur > 0 ? `${n}/s × ${dur}s` : n,
+      sent: ok,
+    });
   };
 
   return (
@@ -69,7 +77,7 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          <label className="md:col-span-6 flex flex-col gap-1">
+          <label className="md:col-span-5 flex flex-col gap-1">
             <span className="text-[11px] text-gray-500 uppercase tracking-wider">Endpoint</span>
             <input
               type="text"
@@ -79,7 +87,7 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
               className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 font-mono placeholder-gray-600 focus:outline-none focus:border-indigo-500"
             />
           </label>
-          <label className="md:col-span-3 flex flex-col gap-1">
+          <label className="md:col-span-2 flex flex-col gap-1">
             <span className="text-[11px] text-gray-500 uppercase tracking-wider">Method</span>
             <select
               value={method}
@@ -91,14 +99,27 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
               ))}
             </select>
           </label>
-          <label className="md:col-span-3 flex flex-col gap-1">
-            <span className="text-[11px] text-gray-500 uppercase tracking-wider">Burst Count</span>
+          <label className="md:col-span-2 flex flex-col gap-1">
+            <span className="text-[11px] text-gray-500 uppercase tracking-wider">
+              {duration > 0 ? 'RPS' : 'Burst Count'}
+            </span>
             <input
               type="number"
               min={1}
               max={5000}
               value={count}
               onChange={(e) => setCount(parseInt(e.target.value, 10) || 1)}
+              className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 font-mono focus:outline-none focus:border-indigo-500"
+            />
+          </label>
+          <label className="md:col-span-3 flex flex-col gap-1">
+            <span className="text-[11px] text-gray-500 uppercase tracking-wider">Duration (sec, 0 = burst)</span>
+            <input
+              type="number"
+              min={0}
+              max={300}
+              value={duration}
+              onChange={(e) => setDuration(parseInt(e.target.value, 10) || 0)}
               className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 font-mono focus:outline-none focus:border-indigo-500"
             />
           </label>
@@ -134,7 +155,7 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
             disabled={!endpoint.trim()}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed transition-colors"
           >
-            Simulate Load (×{count})
+            {duration > 0 ? `Sustain ${count} rps × ${duration}s` : `Burst ×${count}`}
           </button>
         </div>
       </div>

@@ -294,13 +294,28 @@ static void *tick_thread(void *arg) {
         double total_cpu = 0.0, total_mem = 0.0;
         int total_active_conns = 0, total_max_conns = 0;
         compat_mutex_lock(&g_pool.lock);
-        int active = 0;
+        int active = 0;        /* serving traffic: healthy or degraded */
+        int overloaded_count = 0;
         for (int i = 0; i < g_pool.count; i++) {
-            if (g_pool.servers[i].status == healthy) {
+            Status st = g_pool.servers[i].status;
+            if (st == healthy || st == degraded) {
+                /* Degraded servers still contribute their (high) CPU/mem to the
+                   average — without this, crossing the 70% threshold makes a
+                   server "vanish" from the autoscaler's input and the composite
+                   load can fall while the system is actually overloading. */
                 active++;
                 total_cpu += g_pool.servers[i].cpu;
                 total_mem += g_pool.servers[i].memory;
                 total_active_conns += g_pool.servers[i].active_connections;
+                total_max_conns += g_pool.servers[i].max_connections;
+            } else if (st == overloaded) {
+                /* Treat overloaded as 100% saturated so the average doesn't
+                   collapse and the scaler is forced to scale up, not down. */
+                overloaded_count++;
+                active++;
+                total_cpu += 100.0;
+                total_mem += 100.0;
+                total_active_conns += g_pool.servers[i].max_connections;
                 total_max_conns += g_pool.servers[i].max_connections;
             }
         }
@@ -326,15 +341,18 @@ static void *tick_thread(void *arg) {
         double rps = rps_json ? rps_json->valuedouble : 0.0;
         cJSON_Delete(current);
 
-        /* Composite load score (0-100): weighted blend of CPU, memory,
-           connection utilization, and RPS normalized per server.
-           Weights: CPU 35%, Memory 25%, Connections 25%, RPS 15% */
+        /* Composite load score (0-100): weighted blend favoring REAL-TIME signals.
+           Connections and RPS update every request; CPU/mem are sampled via /health
+           polling and lag behind bursts (especially with sync busy-loops on the
+           backend that block the event loop and stall /health). So we trust
+           connections/RPS more.
+           Weights: ConnUtil 40%, RPS 25%, CPU 20%, Memory 15% */
         double rps_per_server = active > 0 ? rps / active : 0.0;
-        double rps_score = rps_per_server > 50.0 ? 100.0 : (rps_per_server / 50.0) * 100.0;
-        double composite = 0.35 * avg_cpu
-                         + 0.25 * avg_mem
-                         + 0.25 * conn_util
-                         + 0.15 * rps_score;
+        double rps_score = rps_per_server > 30.0 ? 100.0 : (rps_per_server / 30.0) * 100.0;
+        double composite = 0.40 * conn_util
+                         + 0.25 * rps_score
+                         + 0.20 * avg_cpu
+                         + 0.15 * avg_mem;
         if (composite > 100.0) composite = 100.0;
         if (composite < 0.0)   composite = 0.0;
 
@@ -420,8 +438,8 @@ int main(void) {
     /* Initialize all subsystems */
     server_pool_init(&g_pool);
     cache_init(&g_cache, 1024);           /* 1024 entry cache */
-    predictor_init(&g_predictor, 0.3);    /* alpha = 0.3 */
-    scaler_init(&g_scaler, 3, 10, 70.0, 25.0, 20);  /* min=3, max=10, up>70%, down<25%, cooldown=20s */
+    predictor_init(&g_predictor, 0.5);    /* alpha = 0.5 — faster reaction for demos */
+    scaler_init(&g_scaler, 3, 10, 20.0, 12.0, 4);  /* dev tuning — up>20%, down<12%, cooldown=4s */
     metrics_init(&g_metrics);
 
     /* Send startup message */
@@ -439,8 +457,10 @@ int main(void) {
     compat_thread_t tick;
     compat_thread_create(&tick, tick_thread, NULL);
 
-    /* Main message loop: read JSON from stdin line by line */
-    char line_buf[65536];
+    /* Main message loop: read JSON from stdin line by line.
+       Static 512 KB buffer — kept off the stack to avoid stack overflow on Windows
+       (default stack is 1 MB; 512 KB on stack would blow it under load). */
+    static char line_buf[524288];
     while (g_running && fgets(line_buf, sizeof(line_buf), stdin) != NULL) {
         /* Strip trailing newline */
         size_t len = strlen(line_buf);

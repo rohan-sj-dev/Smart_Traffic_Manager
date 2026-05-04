@@ -180,8 +180,8 @@ export function useLiveData(intervalMs = 1000) {
     return sendWs({ type: 'route_request', url, method });
   }, [sendWs]);
 
-  const simulateLoad = useCallback((url, count, method = 'GET') => {
-    return sendWs({ type: 'simulate_load', url, count, method });
+  const simulateLoad = useCallback((url, count, method = 'GET', durationSec = 0) => {
+    return sendWs({ type: 'simulate_load', url, count, method, durationSec });
   }, [sendWs]);
 
   return {

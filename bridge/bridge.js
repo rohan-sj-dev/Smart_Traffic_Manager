@@ -9,10 +9,14 @@ const BRIDGE_PORT = 4000;
 const ENGINE_PATH = path.join(__dirname, '..', 'engine', 'build', 'engine.exe');
 
 const INITIAL_BACKENDS = [
-    { id: 'server-alpha', name: 'Alpha', ip: '127.0.0.1', port: 3001, weight: 1.0, max_connections: 100 },  // full capacity
-    { id: 'server-beta',  name: 'Beta',  ip: '127.0.0.1', port: 3002, weight: 0.6, max_connections: 60  },  // 60% capacity
-    { id: 'server-gamma', name: 'Gamma', ip: '127.0.0.1', port: 3003, weight: 0.3, max_connections: 30  },  // 30% capacity
+    { id: 'server-alpha', name: 'Alpha', ip: '127.0.0.1', port: 3001, weight: 1.0, max_connections: 100, capacity: 0.6 },
+    { id: 'server-beta',  name: 'Beta',  ip: '127.0.0.1', port: 3002, weight: 0.6, max_connections: 60,  capacity: 0.4 },
+    { id: 'server-gamma', name: 'Gamma', ip: '127.0.0.1', port: 3003, weight: 0.3, max_connections: 30,  capacity: 0.3 },
 ];
+/* When AUTO_SPAWN_INITIAL=1 the bridge forks the initial 3 itself with their
+   capacity profiles. Set to 0 if you start them externally (docker / manual). */
+const AUTO_SPAWN_INITIAL = process.env.AUTO_SPAWN_INITIAL !== '0';
+const initialProcesses = new Map();
 
 /* Live server pool — starts with initial 3, grows/shrinks via autoscaler */
 const BACKENDS = [...INITIAL_BACKENDS];
@@ -25,10 +29,10 @@ let MIN_SERVERS = 3;   // mutable via WS `set_scaling_limits`
 let MAX_SERVERS = 10;
 
 const WORKLOAD_ENDPOINTS = ['/cpu', '/ml', '/image', '/data', '/api/train', '/api/predict', '/api/datasets'];
-const HEALTH_POLL_MS = 2000;
+const HEALTH_POLL_MS = 500;       /* 500ms — keep up with bursts */
 const STATUS_POLL_MS = 1000;
 const TRAFFIC_INTERVAL_MS = 500;
-const MAX_INFLIGHT = 20;   // max concurrent requests to backends
+const MAX_INFLIGHT = 80;          /* pipeline depth — was 20, too restrictive */
 let inflight = 0;
 
 /* Endpoint-specific TTLs (seconds) — static/cacheable get longer TTLs */
@@ -102,7 +106,9 @@ app.post('/api/request', (req, res) => {
 app.post('/api/cache/put', (req, res) => {
     const { key, value, ttl } = req.body || {};
     if (!key || !value) return res.status(400).json({ error: 'key and value required' });
-    sendToEngine({ type: 'cache_put', key, value, size: value.length, ttl: ttl || 300 });
+    /* Cap value to 400 KB to prevent engine line-buffer overflow */
+    const safeValue = typeof value === 'string' ? value.slice(0, 409600) : JSON.stringify(value).slice(0, 409600);
+    sendToEngine({ type: 'cache_put', key, value: safeValue, size: safeValue.length, ttl: ttl || 300 });
     res.json({ ok: true });
 });
 
@@ -134,7 +140,7 @@ wss.on('connection', (ws) => {
                 applyScalingLimits(msg.minServers, msg.maxServers);
             }
             if (msg.type === 'simulate_load') {
-                simulateLoad(msg.url, msg.count, msg.method);
+                simulateLoad(msg.url, msg.count, msg.method, msg.durationSec);
             }
         } catch (_) {}
     });
@@ -219,6 +225,7 @@ function handleEngineMessage(line) {
         case 'cache_response':
             broadcast({ type: 'cache_event', data: msg });
             if (msg.request_id) {
+                pendingMethods.delete(msg.request_id);   /* cache hit short-circuits forwardToBackend */
                 const pending = pendingRequests.get(msg.request_id);
                 if (pending) {
                     pendingRequests.delete(msg.request_id);
@@ -326,9 +333,11 @@ function pollHealth() {
         httpGet(`http://${b.ip}:${b.port}/health`)
             .then((data) => {
                 serverHealth.set(b.id, data);
-                const jitter = (Math.random() - 0.5) * 10;
-                const cpu = Math.min(95, Math.max(1, (data.cpu ?? 5) + jitter));
-                const memory = Math.min(95, Math.max(5, 30 + (data.active_connections ?? 0) * 2 + jitter));
+                /* Trust the per-process numbers reported by the server.
+                   They naturally diverge: each Node process has its own
+                   process.cpuUsage()/RSS and its own CAPACITY profile. */
+                const cpu = Math.min(99, Math.max(0, data.cpu ?? 0));
+                const memory = Math.min(99, Math.max(0, data.memory ?? 0));
                 sendToEngine({
                     type: 'health_update',
                     server_id: b.id,
@@ -374,9 +383,20 @@ function spawnServer() {
     const name = SCALE_NAMES[scaleNameIdx++ % SCALE_NAMES.length];
     const id = `server-${name.toLowerCase()}`;
 
-    console.log(`[autoscale] Spawning ${id} on port ${port}`);
+    /* Randomize hardware profile per-spawn so dynamic servers diverge:
+       capacity 0.5–1.0, weight tracks capacity, max_connections scales with it. */
+    const capacity = +(0.5 + Math.random() * 0.5).toFixed(2);
+    const weight = capacity;
+    const maxConn = Math.round(60 + capacity * 60);   // 90–120
+
+    console.log(`[autoscale] Spawning ${id} on port ${port} (capacity=${capacity})`);
     const child = fork(SERVER_SCRIPT, [], {
-        env: { ...process.env, SERVER_ID: id, PORT: String(port) },
+        env: {
+            ...process.env,
+            SERVER_ID: id,
+            PORT: String(port),
+            SERVER_CAPACITY: String(capacity),
+        },
         stdio: 'pipe',
     });
 
@@ -386,14 +406,13 @@ function spawnServer() {
         dynamicProcesses.delete(id);
     });
 
-    const weight = Number(Math.random().toFixed(2));
-    const backend = { id, name, ip: '127.0.0.1', port, weight, max_connections: 100 };
+    const backend = { id, name, ip: '127.0.0.1', port, weight, max_connections: maxConn, capacity };
     BACKENDS.push(backend);
     dynamicProcesses.set(id, child);
 
     /* Tell engine about the new server (after a short delay for it to bind the port) */
     setTimeout(() => {
-        sendToEngine({ type: 'add_server', id, name, ip: '127.0.0.1', port, weight, max_connections: 100 });
+        sendToEngine({ type: 'add_server', id, name, ip: '127.0.0.1', port, weight, max_connections: maxConn });
     }, 1500);
 
     return backend;
@@ -437,15 +456,26 @@ function applyScalingLimits(min, max) {
     broadcast({ type: 'scaling_limits_updated', data: { minServers: MIN_SERVERS, maxServers: MAX_SERVERS } });
 }
 
-function simulateLoad(url, count, method) {
+/* simulateLoad supports two modes:
+   - Burst:     count = N total requests, fired as fast as MAX_INFLIGHT allows.
+   - Sustained: durationSec > 0 holds traffic at `count` RPS for N seconds,
+                so the autoscaler has a long-enough window to observe, react,
+                scale, and drain. */
+function simulateLoad(url, count, method, durationSec) {
     const target = (url || '/data').toString();
-    const n = Math.max(1, Math.min(500, parseInt(count, 10) || 10));
+    const rate = Math.max(1, Math.min(200, parseInt(count, 10) || 10));
     const m = (method || 'GET').toUpperCase();
-    console.log(`[bridge] Simulating ${n} ${m} requests to ${target}`);
+    const sustain = parseInt(durationSec, 10) > 0;
+    const totalDuration = sustain ? Math.min(300, parseInt(durationSec, 10)) : 0;
+    const totalCap = sustain ? rate * totalDuration : Math.min(500, rate);
+    const tickMs = sustain ? Math.max(20, Math.round(1000 / rate)) : 50;
+    const endAt = sustain ? Date.now() + totalDuration * 1000 : Infinity;
+
+    console.log(`[bridge] simulateLoad ${m} ${target} — ${sustain ? `${rate} rps × ${totalDuration}s` : `burst ${totalCap}`}`);
 
     let sent = 0;
     const interval = setInterval(() => {
-        if (!engineReady || sent >= n) {
+        if (!engineReady || sent >= totalCap || Date.now() >= endAt) {
             clearInterval(interval);
             return;
         }
@@ -455,7 +485,7 @@ function simulateLoad(url, count, method) {
         pendingMethods.set(id, m);
         sendToEngine({ type: 'route_request', request_id: id, url: target, method: m });
         sent++;
-    }, 50);
+    }, tickMs);
 }
 
 function handleScaleCommand(msg) {
@@ -652,9 +682,28 @@ function httpGet(url) {
 
 const startTime = Date.now();
 
+function spawnInitialBackends() {
+    for (const b of INITIAL_BACKENDS) {
+        console.log(`[bridge] Spawning initial ${b.id} on port ${b.port} (capacity=${b.capacity})`);
+        const child = fork(SERVER_SCRIPT, [], {
+            env: {
+                ...process.env,
+                SERVER_ID: b.id,
+                PORT: String(b.port),
+                SERVER_CAPACITY: String(b.capacity),
+            },
+            stdio: 'pipe',
+        });
+        child.on('error', (err) => console.error(`[bridge] ${b.id} error: ${err.message}`));
+        child.on('exit', (code) => console.log(`[bridge] ${b.id} exited (code=${code})`));
+        initialProcesses.set(b.id, child);
+    }
+}
+
 httpServer.listen(BRIDGE_PORT, async () => {
     console.log(`[bridge] HTTP + WS server on http://localhost:${BRIDGE_PORT}`);
     await db.init();
+    if (AUTO_SPAWN_INITIAL) spawnInitialBackends();
     startEngine();
 
     // Poll health every 2s
@@ -692,10 +741,14 @@ process.on('SIGINT', () => {
     if (engine && engine.stdin.writable) {
         sendToEngine({ type: 'shutdown' });
     }
-    /* Kill all dynamically spawned servers */
+    /* Kill all spawned servers (initial + dynamic) */
     for (const [id, child] of dynamicProcesses) {
         if (child && !child.killed) child.kill();
     }
     dynamicProcesses.clear();
+    for (const [id, child] of initialProcesses) {
+        if (child && !child.killed) child.kill();
+    }
+    initialProcesses.clear();
     db.close().finally(() => setTimeout(() => process.exit(0), 1000));
 });
