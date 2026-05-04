@@ -37,16 +37,14 @@ typedef struct {
     compat_mutex_t lock;
 } AutoScaler;
 
-
 void scaler_init(AutoScaler *s, int min_servers, int max_servers,
                  double up_threshold, double down_threshold, int cooldown);
-
 
 void scaler_destroy(AutoScaler *s);
 int scaler_evaluate(AutoScaler *s, Predictor *p);
 
 void scaler_set_count(AutoScaler *s, int count);
-
+void scaler_set_limits(AutoScaler *s, int min_servers, int max_servers);
 
 cJSON *scaler_config_to_json(AutoScaler *s);
 

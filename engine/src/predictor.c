@@ -21,7 +21,6 @@ void predictor_destroy(Predictor *p) {
     compat_mutex_destroy(&p->lock);
 }
 
-
 double window_mean(Predictor *p) {
     if (p->window_count == 0) return 0.0;
     double sum = 0.0;
@@ -31,8 +30,6 @@ double window_mean(Predictor *p) {
     }
     return sum / count;
 }
-
-
 
 static double window_stddev(Predictor *p) {
     if (p->window_count < 2) return 0.0;
@@ -51,22 +48,18 @@ double predictor_update(Predictor *p, double observed) {
 
     double prev_ema = p->ema;
 
-    /* Store in sliding window (circular buffer) */
     p->window[p->window_index] = observed;
     p->window_index = (p->window_index + 1) % PREDICTOR_WINDOW_SIZE;
     if (p->window_count < PREDICTOR_WINDOW_SIZE) p->window_count++;
 
-    /* EMA update: EMA_new = alpha * observed + (1 - alpha) * EMA_old */
     if (p->window_count == 1) {
         p->ema = observed;
     } else {
         p->ema = p->alpha * observed + (1.0 - p->alpha) * p->ema;
     }
 
-    /* Rate of change */
     p->rate_of_change = p->ema - prev_ema;
 
-    /* Trend detection */
     if (p->rate_of_change > 0.5) {
         p->trend = TREND_RISING;
     } else if (p->rate_of_change < -0.5) {
@@ -75,20 +68,16 @@ double predictor_update(Predictor *p, double observed) {
         p->trend = TREND_STABLE;
     }
 
-    /* Spike detection: observed > mean + 2*stddev */
     double mean = window_mean(p);
     double stddev = window_stddev(p);
     p->spike_detected = (stddev > 0.0 && observed > mean + 2.0 * stddev);
 
-    /* Predicted load = EMA + rate_of_change (simple linear extrapolation) */
     p->predicted_load = p->ema + p->rate_of_change;
     if (p->predicted_load < 0.0) p->predicted_load = 0.0;
 
-    /* Confidence: based on how many data points we have */
     p->confidence = (double)p->window_count / PREDICTOR_WINDOW_SIZE;
     if (p->confidence > 1.0) p->confidence = 1.0;
 
-    /* Recommended action */
     if (p->predicted_load > 70.0 || p->spike_detected) {
         p->action = ACTION_SCALE_UP;
     } else if (p->predicted_load < 25.0 && p->trend != TREND_RISING) {

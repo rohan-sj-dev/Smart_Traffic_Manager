@@ -1,8 +1,9 @@
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
 } from 'recharts';
-import { Database, HardDrive, Trash2, Timer, TrendingUp } from 'lucide-react';
+import { Timer } from 'lucide-react';
 import MetricCard from '../components/MetricCard';
+import { formatDecimal } from '../utils/format';
 
 const COLORS = ['#6366f1', '#374151'];
 
@@ -19,16 +20,16 @@ export default function Cache({ cacheStats }) {
         <p className="text-sm text-gray-500 mt-1">In-memory LRU cache — intercepts requests before hitting backend servers</p>
       </div>
 
-      {/* Metric Cards */}
+      {}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard label="Hit Rate" value={cacheStats.hitRate} unit="%" color="emerald" />
+        <MetricCard label="Hit Rate" value={formatDecimal(cacheStats.hitRate)} unit="%" color="emerald" />
         <MetricCard label="Total Entries" value={`${cacheStats.totalEntries}/${cacheStats.maxEntries}`} color="indigo" />
         <MetricCard label="Memory Used" value={`${cacheStats.memoryUsed}/${cacheStats.maxMemory}`} unit="MB" color="cyan" />
         <MetricCard label="Evictions" value={cacheStats.evictions} color="amber" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Donut Chart */}
+        {}
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Hit / Miss Ratio</h3>
           <ResponsiveContainer width="100%" height={220}>
@@ -47,6 +48,7 @@ export default function Cache({ cacheStats }) {
                 ))}
               </Pie>
               <Tooltip
+                formatter={(value) => value.toLocaleString()}
                 contentStyle={{
                   backgroundColor: '#111827',
                   border: '1px solid #374151',
@@ -69,7 +71,7 @@ export default function Cache({ cacheStats }) {
           </div>
         </div>
 
-        {/* Top Cached Items */}
+        {}
         <div className="lg:col-span-2 bg-gray-900/70 border border-gray-800 rounded-xl p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Top Cached Items</h3>
           <table className="w-full text-sm">
@@ -87,7 +89,7 @@ export default function Cache({ cacheStats }) {
                 <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
                   <td className="py-2.5 font-mono text-indigo-300 text-xs">{item.url}</td>
                   <td className="py-2.5 text-center text-gray-300">{item.hits.toLocaleString()}</td>
-                  <td className="py-2.5 text-center text-gray-400">{item.size} KB</td>
+                  <td className="py-2.5 text-center text-gray-400">{formatDecimal(item.size)} KB</td>
                   <td className="py-2.5 text-center">
                     <span className="inline-flex items-center gap-1 text-gray-400">
                       <Timer className="w-3 h-3" />{item.ttl}s
@@ -103,7 +105,6 @@ export default function Cache({ cacheStats }) {
         </div>
       </div>
 
-      
     </div>
   );
 }

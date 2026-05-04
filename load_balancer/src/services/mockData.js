@@ -1,6 +1,3 @@
-// Mock data generator for the Load Balancer Dashboard
-// Produces realistic dummy data until the real bridge/C engine is connected
-
 let requestId = 1000;
 let scalingEventId = 100;
 
@@ -20,7 +17,6 @@ function pick(arr) {
   return arr[randInt(0, arr.length - 1)];
 }
 
-// Generate a list of mock servers
 export function generateServers(count = 3) {
   return Array.from({ length: count }, (_, i) => {
     const cpu = rand(10, 95);
@@ -43,12 +39,11 @@ export function generateServers(count = 3) {
   });
 }
 
-// Generate traffic data points (for charts)
 export function generateTrafficHistory(points = 60) {
   const now = Date.now();
   let base = rand(20, 60);
   return Array.from({ length: points }, (_, i) => {
-    // Add some wave pattern + noise
+
     const wave = Math.sin(i / 8) * 15;
     const spike = i > 40 && i < 50 ? rand(20, 50) : 0;
     const noise = rand(-5, 5);
@@ -64,7 +59,6 @@ export function generateTrafficHistory(points = 60) {
   });
 }
 
-// Generate cache stats
 export function generateCacheStats() {
   const totalHits = randInt(1000, 50000);
   const totalMisses = randInt(200, 10000);
@@ -76,21 +70,20 @@ export function generateCacheStats() {
     totalMisses,
     totalEntries: randInt(20, 200),
     maxEntries: 500,
-    memoryUsed: randInt(5, 100), // MB
+    memoryUsed: randInt(5, 100),
     maxMemory: 128,
     evictions: randInt(0, 500),
-    avgTtl: randInt(30, 300), // seconds
+    avgTtl: randInt(30, 300),
     topItems: ENDPOINTS.slice(0, 4).map(ep => ({
       url: ep,
       hits: randInt(50, 5000),
-      size: randInt(1, 500), // KB
+      size: randInt(1, 500),
       ttl: randInt(30, 300),
       lastAccessed: new Date(Date.now() - randInt(0, 60000)).toISOString(),
     })),
   };
 }
 
-// Generate prediction data
 export function generatePredictions() {
   return {
     currentLoad: randInt(20, 80),
@@ -105,7 +98,6 @@ export function generatePredictions() {
   };
 }
 
-// Generate scaling events
 export function generateScalingEvents(count = 10) {
   const now = Date.now();
   return Array.from({ length: count }, (_, i) => ({
@@ -119,7 +111,6 @@ export function generateScalingEvents(count = 10) {
   })).reverse();
 }
 
-// Generate auto-scaling config
 export function generateScalingConfig() {
   return {
     minServers: 1,
@@ -133,12 +124,13 @@ export function generateScalingConfig() {
   };
 }
 
-// Generate request logs
-export function generateLogs(count = 50) {
+export function generateLogs(count = 200) {
   const now = Date.now();
+  const rangeMs = 24 * 60 * 60 * 1000;
   return Array.from({ length: count }, (_, i) => ({
     id: requestId++,
-    timestamp: new Date(now - (count - i) * randInt(100, 2000)).toISOString(),
+
+    timestamp: new Date(now - (i * (rangeMs / count)) - randInt(0, 5000)).toISOString(),
     method: pick(['GET', 'GET', 'GET', 'POST']),
     url: pick(ENDPOINTS),
     serverRouted: pick(SERVER_NAMES.slice(0, 3)),
@@ -146,10 +138,9 @@ export function generateLogs(count = 50) {
     latency: randInt(5, 800),
     cacheHit: Math.random() > 0.5,
     clientIp: `192.168.1.${randInt(1, 254)}`,
-  })).reverse();
+  }));
 }
 
-// Generate overall system metrics
 export function generateSystemMetrics() {
   return {
     totalRequests: randInt(10000, 500000),
@@ -165,7 +156,6 @@ export function generateSystemMetrics() {
   };
 }
 
-// Simulate a live data tick — returns incremental update
 export function tick(prevMetrics) {
   if (!prevMetrics) return generateSystemMetrics();
   const delta = rand(-5, 5);

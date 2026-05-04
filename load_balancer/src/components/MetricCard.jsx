@@ -1,3 +1,5 @@
+import { formatDecimal } from '../utils/format';
+
 export default function MetricCard({ label, value, unit, icon: Icon, trend, color = 'indigo' }) {
   const colorMap = {
     indigo: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
@@ -24,7 +26,7 @@ export default function MetricCard({ label, value, unit, icon: Icon, trend, colo
       </div>
       {trend !== undefined && (
         <div className={`mt-2 text-xs font-medium ${trend >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-          {trend >= 0 ? '↑' : '↓'} {Math.abs(trend)}%
+          {trend >= 0 ? '↑' : '↓'} {formatDecimal(Math.abs(trend))}%
         </div>
       )}
     </div>

@@ -63,7 +63,6 @@ void metrics_flush_interval(MetricsCollector *m, int active_servers, double cpu,
         snap->avg_latency_ms = 0.0;
     }
 
-
     if (m->interval_latency_count > 0) {
         qsort(m->interval_latencies, (size_t)m->interval_latency_count,
               sizeof(double), cmp_double);
@@ -73,7 +72,6 @@ void metrics_flush_interval(MetricsCollector *m, int active_servers, double cpu,
     } else {
         snap->p99_latency_ms = 0.0;
     }
-
 
     snap->cache_hits = 0;
     snap->cache_misses = 0;

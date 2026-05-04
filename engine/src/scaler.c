@@ -40,7 +40,6 @@ int scaler_evaluate(AutoScaler *s, Predictor *p) {
     time_t now = time(NULL);
     int delta = 0;
 
-
     if (difftime(now, s->last_scale_time) < s->cooldown_seconds) {
         compat_mutex_unlock(&p->lock);
         compat_mutex_unlock(&s->lock);
@@ -50,14 +49,10 @@ int scaler_evaluate(AutoScaler *s, Predictor *p) {
     double load = p->predicted_load;
     bool spike = p->spike_detected;
 
-
     if (load > s->scale_up_threshold || spike) {
         if (s->current_count < s->max_servers) {
             int old = s->current_count;
 
-            /* Proportional scale-up: more servers per tick when load is far above threshold.
-               Each 15 percentage points of overshoot adds another server. Spikes get a
-               +1 boost so a sudden burst escalates faster. */
             double over = load - s->scale_up_threshold;
             delta = (int)(over / 15.0) + 1;
             if (spike) delta += 1;
@@ -73,18 +68,10 @@ int scaler_evaluate(AutoScaler *s, Predictor *p) {
         }
     }
 
-    /* Scale down if load is falling below threshold, OR if load has stabilised
-       below threshold. The second condition
-       handles the common case where load reaches a steady-state floor and
-       trend is STABLE rather than FALLING, which would otherwise prevent
-       scale-down indefinitely. */
     else if (load < s->scale_down_threshold && p->trend != TREND_RISING) {
         if (s->current_count > s->min_servers) {
             int old = s->current_count;
 
-            /* Proportional scale-down: each 4 percentage points below threshold
-               removes another server. Lets the pool collapse quickly when traffic
-               vanishes instead of waiting cooldown × (current - min) seconds. */
             double under = s->scale_down_threshold - load;
             int magnitude = (int)(under / 4.0) + 1;
             delta = -magnitude;
@@ -111,6 +98,13 @@ void scaler_set_count(AutoScaler *s, int count) {
     compat_mutex_unlock(&s->lock);
 }
 
+void scaler_set_limits(AutoScaler *s, int min_servers, int max_servers) {
+    compat_mutex_lock(&s->lock);
+    if (min_servers > 0) s->min_servers = min_servers;
+    if (max_servers >= s->min_servers) s->max_servers = max_servers;
+    compat_mutex_unlock(&s->lock);
+}
+
 cJSON *scaler_config_to_json(AutoScaler *s) {
     compat_mutex_lock(&s->lock);
     cJSON *obj = cJSON_CreateObject();
@@ -129,7 +123,7 @@ cJSON *scaler_events_to_json(AutoScaler *s, int max_events) {
     compat_mutex_lock(&s->lock);
     cJSON *arr = cJSON_CreateArray();
     int total = s->event_count < max_events ? s->event_count : max_events;
-    /* Read from most recent backwards */
+    
     int idx = (s->event_index - 1 + SCALER_MAX_EVENTS) % SCALER_MAX_EVENTS;
     for (int i = 0; i < total; i++) {
         ScaleEvent *ev = &s->events[idx];

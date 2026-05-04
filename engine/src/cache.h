@@ -34,7 +34,6 @@ typedef struct {
     compat_mutex_t lock;
 } Cache;
 
-
 void cache_init(Cache *cache, int capacity);
 void cache_destroy(Cache *cache);
 

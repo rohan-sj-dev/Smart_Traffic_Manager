@@ -1,33 +1,59 @@
-import { useState, useEffect } from "react";
-import { useSimulator } from "../hooks/useSimulator";
+import { useRef, useState } from "react";
+import { runLoadBatch } from "../services/loadBridge";
+import { updateWorkload } from "../services/workloadStore";
 
 export default function MatrixPage() {
   const [size, setSize] = useState(500);
   const [runs, setRuns] = useState(10);
   const [concurrency, setConcurrency] = useState(2);
   const [running, setRunning] = useState(false);
-  const { connected, simulateLoad } = useSimulator();
+  const [stats, setStats] = useState({ completed: 0, failed: 0, lastLatency: 0, durationMs: 0 });
+  const [logs, setLogs] = useState(["[INFO] Waiting for matrix task..."]);
+  const runTokenRef = useRef(0);
 
-  useEffect(() => {
-    let interval;
-    if (running && connected) {
-      interval = setInterval(() => {
-        const count = Math.min(1000, parseInt(runs, 10) * parseInt(concurrency, 10));
-        simulateLoad("/cpu", count, "POST");
-      }, 1000);
+  const startMatrixLoad = async () => {
+    const token = runTokenRef.current + 1;
+    runTokenRef.current = token;
+    setRunning(true);
+    updateWorkload('matrix', { running: true, count: runs });
+    setStats({ completed: 0, failed: 0, lastLatency: 0, durationMs: 0 });
+    setLogs([`[INFO] Sending ${runs} matrix request(s) through the load balancer...`]);
+
+    const result = await runLoadBatch({
+      url: "/cpu",
+      totalRuns: runs,
+      concurrency,
+      isActive: () => runTokenRef.current === token,
+      onProgress: (next) => {
+        setStats(prev => ({ ...prev, ...next }));
+        if (next.error) setLogs(prev => [`[ERROR] ${next.error}`, ...prev].slice(0, 20));
+      },
+    });
+
+    if (runTokenRef.current === token) {
+      setStats(prev => ({ ...prev, durationMs: result.durationMs, failed: result.failed }));
+      setLogs(prev => [`[DONE] Completed ${result.completed}, failed ${result.failed}.`, ...prev].slice(0, 20));
+      setRunning(false);
+      updateWorkload('matrix', { running: false });
     }
-    return () => clearInterval(interval);
-  }, [running, connected, runs, concurrency, simulateLoad]);
+  };
+
+  const stopMatrixLoad = () => {
+    runTokenRef.current += 1;
+    setRunning(false);
+    updateWorkload('matrix', { running: false });
+    setLogs(prev => ["[INFO] Stop requested.", ...prev].slice(0, 20));
+  };
 
   return (
     <div className="p-6 text-white max-w-7xl mx-auto">
 
-      {/* Title */}
+      {}
       <h1 className="text-3xl font-semibold mb-8 tracking-tight">
         Matrix Multiplication
       </h1>
 
-      {/* Config */}
+      {}
       <div className="bg-[#0f172a] p-6 rounded-2xl border border-gray-800 mb-10">
 
         <h2 className="text-lg font-semibold mb-4">Configuration</h2>
@@ -47,16 +73,15 @@ export default function MatrixPage() {
             />
           </div>
 
-
           <div>
             <label className="block text-sm text-gray-400 mb-2">
-                Concurrency
+                Runs
             </label>
             <input
                 type="number"
-                value={concurrency}
-                onChange={(e) => setConcurrency(e.target.value)}
-                placeholder="Concurrency"
+                value={runs}
+                onChange={(e) => setRuns(e.target.value)}
+                placeholder="Runs"
                 className="w-full p-3 rounded-lg bg-[#020617] border border-gray-800 focus:outline-none focus:border-indigo-500"
             />
           </div>
@@ -73,49 +98,40 @@ export default function MatrixPage() {
                 className="w-full p-3 rounded-lg bg-[#020617] border border-gray-800 focus:outline-none focus:border-indigo-500"
             />
           </div>
-
 
         </div>
 
-        {/* Buttons */}
+        {}
         <div className="flex gap-4 mt-6">
-          <button 
-            onClick={() => setRunning(true)}
-            className="bg-green-500 hover:bg-green-600 px-5 py-2 rounded-lg"
-          >
+          <button onClick={startMatrixLoad} disabled={running} className="bg-green-500 hover:bg-green-600 disabled:opacity-50 px-5 py-2 rounded-lg">
             Start
           </button>
 
-          <button 
-            onClick={() => setRunning(false)}
-            className="bg-red-500 hover:bg-red-600 px-5 py-2 rounded-lg"
-          >
+          <button onClick={stopMatrixLoad} className="bg-red-500 hover:bg-red-600 px-5 py-2 rounded-lg">
             Stop
           </button>
         </div>
 
       </div>
 
-      {/* Metrics */}
+      {}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-10">
 
         <div className="bg-[#0f172a] p-5 rounded-2xl border border-gray-800">
           <p className="text-gray-400">Last Execution Time</p>
-          <h2 className="text-xl font-bold">-- ms</h2>
+          <h2 className="text-xl font-bold">{Math.round(stats.lastLatency)} ms</h2>
         </div>
 
         <div className="bg-[#0f172a] p-5 rounded-2xl border border-gray-800">
           <p className="text-gray-400">Average Time</p>
-          <h2 className="text-xl font-bold">-- ms</h2>
+          <h2 className="text-xl font-bold">{stats.completed}/{runs}</h2>
         </div>
 
       </div>
 
-      {/* Status */}
-      <div className="bg-[#0f172a] p-5 rounded-2xl border border-gray-800 h-24 text-gray-400">
-        <p>Status: <span className={`font-medium ${!connected ? "text-amber-400" : running ? "text-green-400" : "text-red-400"}`}>
-          {!connected ? "Connecting to Engine..." : running ? "Matrix Workload Active" : "Stopped"}
-        </span></p>
+      {}
+      <div className="bg-[#0f172a] p-5 rounded-2xl border border-gray-800 h-40 overflow-y-auto text-gray-400">
+        {logs.map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}
       </div>
 
     </div>

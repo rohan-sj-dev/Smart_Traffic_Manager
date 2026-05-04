@@ -37,7 +37,12 @@ function TriggerBadge({ trigger }) {
   );
 }
 
+function formatDecimal(value, decimals = 1) {
+  return value !== undefined && value !== null ? Number(value).toFixed(decimals) : '0.0';
+}
+
 export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh, onApplyLimits, connected }) {
+  const visibleScalingEvents = scalingEvents || [];
   const [minInput, setMinInput] = useState(scalingConfig.minServers);
   const [maxInput, setMaxInput] = useState(scalingConfig.maxServers);
   const [savedNote, setSavedNote] = useState(null);
@@ -73,7 +78,7 @@ export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh, o
         </button>
       </div>
 
-      {/* Editable Limits */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -133,7 +138,7 @@ export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh, o
         )}
       </div>
 
-      {/* Config Panel */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <h3 className="text-sm font-semibold text-white">Scaling Policy</h3>
@@ -144,10 +149,10 @@ export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh, o
             { label: 'Max Servers', value: scalingConfig.maxServers },
             { label: 'Current Servers', value: scalingConfig.currentServers },
             { label: 'Cooldown', value: `${scalingConfig.cooldownPeriod}s` },
-            { label: 'Scale-Up Threshold', value: `${scalingConfig.scaleUpThreshold}%` },
-            { label: 'Scale-Down Threshold', value: `${scalingConfig.scaleDownThreshold}%` },
-            { label: 'EMA Alpha (α)', value: scalingConfig.emaAlpha },
-            { label: 'Spike Threshold', value: scalingConfig.spikeThreshold },
+            { label: 'Scale-Up Threshold', value: `${formatDecimal(scalingConfig.scaleUpThreshold)}%` },
+            { label: 'Scale-Down Threshold', value: `${formatDecimal(scalingConfig.scaleDownThreshold)}%` },
+            { label: 'EMA Alpha (α)', value: formatDecimal(scalingConfig.emaAlpha) },
+            { label: 'Spike Threshold', value: formatDecimal(scalingConfig.spikeThreshold) },
           ].map(({ label, value }) => (
             <div key={label}>
               <p className="text-xs text-gray-500 mb-1">{label}</p>
@@ -157,7 +162,7 @@ export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh, o
         </div>
       </div>
 
-      {/* Capacity Gauge */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-5">
         <h3 className="text-sm font-semibold text-white mb-4">Server capacity</h3>
         <div className="flex items-center gap-4">
@@ -185,7 +190,7 @@ export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh, o
         </div>
       </div>
 
-      {/* Scaling Events Log */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-800">
           <h3 className="text-sm font-semibold text-white">Scaling Event History</h3>
@@ -203,7 +208,7 @@ export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh, o
               </tr>
             </thead>
             <tbody>
-              {scalingEvents.map(evt => (
+              {visibleScalingEvents.map(evt => (
                 <tr key={evt.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
                   <td className="px-4 py-2.5 text-xs text-gray-400 font-mono">
                     {new Date(evt.timestamp).toLocaleTimeString()}
@@ -213,7 +218,7 @@ export default function AutoScaling({ scalingEvents, scalingConfig, onRefresh, o
                   <td className="px-4 py-2.5 text-center text-white font-mono">{evt.serversAfter}</td>
                   <td className="px-4 py-2.5 text-center">
                     <span className={`font-mono ${evt.predictedLoad > 80 ? 'text-red-400' : 'text-gray-300'}`}>
-                      {evt.predictedLoad}%
+                      {formatDecimal(evt.predictedLoad)}%
                     </span>
                   </td>
                   <td className="px-4 py-2.5"><TriggerBadge trigger={evt.trigger || evt.reason} /></td>

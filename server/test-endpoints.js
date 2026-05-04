@@ -45,7 +45,6 @@ async function testEndpoint(port, endpoint) {
             return;
         }
 
-        // Validate common fields
         if (endpoint.path === '/health') {
             if (!body.server_id || !body.status) throw new Error('Missing server_id or status');
         } else {
@@ -53,7 +52,6 @@ async function testEndpoint(port, endpoint) {
             if (!body.result) throw new Error('Missing result');
         }
 
-        // Check processing_time_ms present on workload endpoints
         if (['/cpu', '/ml', '/image', '/api/train', '/api/predict'].includes(endpoint.path)) {
             if (body.result.processing_time_ms === undefined) throw new Error('Missing processing_time_ms');
         }
@@ -74,7 +72,6 @@ async function main() {
     console.log('Γòæ          LoadC Backend Server ΓÇö Endpoint Test Suite         Γòæ');
     console.log('ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥\n');
 
-    // Check which ports are reachable
     const activePorts = [];
     for (const port of PORTS) {
         try {

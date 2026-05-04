@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-/* FNV-1a hash */
+/*This hash function was generated with the help of an LLM for better cache key distribution. */
 unsigned int hash_key(const char *key) {
     unsigned int hash = 2166136261u;
     while (*key) {
@@ -25,16 +25,13 @@ Node *create_node(const char *key, const char *value,size_t size, int ttl) {
     return node;
 }
 
-
 void move_to_head(Cache *cache, Node *node) {
     if (node == cache->head) return;
 
-    /* detach from current position */
     if (node->prev) node->prev->next = node->next;
     if (node->next) node->next->prev = node->prev;
     if (node == cache->tail) cache->tail = node->prev;
 
-    /* insert at head */
     node->prev = NULL;
     node->next = cache->head;
     if (cache->head) cache->head->prev = node;
@@ -51,7 +48,6 @@ void detach_node(Cache *cache, Node *node) {
     node->next = NULL;
 }
 
-
 void hash_remove(Cache *cache, Node *node) {
     unsigned int idx = hash_key(node->key);
     Node *cur = cache->hash_table[idx];
@@ -66,7 +62,6 @@ void hash_remove(Cache *cache, Node *node) {
         cur = cur->hash_next;
     }
 }
-
 
 Node *hash_find(Cache *cache, const char *key) {
     unsigned int idx = hash_key(key);
@@ -83,7 +78,6 @@ void hash_insert(Cache *cache, Node *node) {
     node->hash_next = cache->hash_table[idx];
     cache->hash_table[idx] = node;
 }
-
 
 void evict_tail(Cache *cache) {
     if (!cache->tail) return;
@@ -164,7 +158,6 @@ void cache_put(Cache *cache, const char *key, const char *value,size_t size, int
         compat_mutex_unlock(&cache->lock);
         return;
     }
-
 
     while (cache->count >= cache->capacity) {
         evict_tail(cache);

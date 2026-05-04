@@ -1,4 +1,5 @@
-import { Server, Cpu, MemoryStick, Network, Weight, ArrowUpDown } from 'lucide-react';
+import { Server, Cpu, MemoryStick, Network, Weight } from 'lucide-react';
+import { formatDecimal } from '../utils/format';
 
 function StatusBadge({ status }) {
   const styles = {
@@ -16,9 +17,8 @@ function StatusBadge({ status }) {
   );
 }
 
-function UsageBar({ value, max = 100, color = 'indigo' }) {
+function UsageBar({ value, max = 100 }) {
   const pct = Math.min(100, (value / max) * 100);
-  const barColor = pct > 80 ? 'bg-red-500' : pct > 60 ? 'bg-amber-500' : `bg-${color}-500`;
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 bg-gray-800 rounded-full h-2">
@@ -29,7 +29,7 @@ function UsageBar({ value, max = 100, color = 'indigo' }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-xs text-gray-400 w-10 text-right">{value}%</span>
+      <span className="text-xs text-gray-400 w-12 text-right">{formatDecimal(value)}%</span>
     </div>
   );
 }
@@ -44,7 +44,7 @@ export default function Servers({ servers }) {
         </p>
       </div>
 
-      {/* Summary Cards */}
+      {}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-4 text-center">
           <Server className="w-5 h-5 text-indigo-400 mx-auto mb-2" />
@@ -54,14 +54,14 @@ export default function Servers({ servers }) {
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-4 text-center">
           <Cpu className="w-5 h-5 text-cyan-400 mx-auto mb-2" />
           <p className="text-2xl font-bold text-white">
-            {(servers.reduce((s, sv) => s + sv.cpu, 0) / servers.length).toFixed(0)}%
+            {formatDecimal(servers.reduce((s, sv) => s + sv.cpu, 0) / servers.length)}%
           </p>
           <p className="text-xs text-gray-500">Avg CPU</p>
         </div>
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-4 text-center">
           <MemoryStick className="w-5 h-5 text-purple-400 mx-auto mb-2" />
           <p className="text-2xl font-bold text-white">
-            {(servers.reduce((s, sv) => s + sv.memory, 0) / servers.length).toFixed(0)}%
+            {formatDecimal(servers.reduce((s, sv) => s + sv.memory, 0) / servers.length)}%
           </p>
           <p className="text-xs text-gray-500">Avg Memory</p>
         </div>
@@ -74,7 +74,7 @@ export default function Servers({ servers }) {
         </div>
       </div>
 
-      {/* Server Table */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -92,7 +92,7 @@ export default function Servers({ servers }) {
             </thead>
             <tbody>
               {servers.map(srv => {
-                const score = srv.weight > 0 ? (srv.activeConnections / srv.weight).toFixed(2) : '∞';
+                const score = srv.weight > 0 ? formatDecimal(srv.activeConnections / srv.weight) : '∞';
                 return (
                   <tr key={srv.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
                     <td className="px-4 py-3">
@@ -132,7 +132,7 @@ export default function Servers({ servers }) {
         </div>
       </div>
 
-      {/* Algorithm Explanation */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-5">
         <div className="flex items-center gap-2 mb-3">
           <h3 className="text-sm font-semibold text-white">Routing Algorithm: Weighted Least Connections</h3>
