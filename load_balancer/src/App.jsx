@@ -33,7 +33,7 @@ export default function App() {
               />
             }
           />
-          <Route path="/logs" element={<Logs logs={data.logs} onRefresh={data.refreshLogs} />} />
+          <Route path="/logs" element={<Logs logs={data.logs} logStats={data.logStats} onRefresh={data.refreshLogs} />} />
           <Route
             path="/simulator"
             element={

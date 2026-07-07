@@ -1,8 +1,8 @@
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { Activity, Zap, Clock, Server, TrendingUp, Database } from 'lucide-react';
 import MetricCard from '../components/MetricCard';
+import { formatDecimal } from '../utils/format';
 
 function formatTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -17,33 +17,33 @@ function formatUptime(seconds) {
 export default function TrafficOverview({ metrics, trafficHistory }) {
   const chartData = trafficHistory.map(p => ({
     time: formatTime(p.time),
-    actual: p.actual,
-    predicted: p.predicted,
+    actual: Number(formatDecimal(p.actual)),
+    predicted: Number(formatDecimal(p.predicted)),
   }));
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {}
       <div>
         <h1 className="text-2xl font-bold text-white">Traffic Overview</h1>
         <p className="text-sm text-gray-500 mt-1">Real-time system monitoring and traffic analytics</p>
       </div>
 
-      {/* Metric Cards */}
+      {}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <MetricCard label="Total Requests" value={metrics.totalRequests.toLocaleString()} color="cyan" />
-        <MetricCard label="Avg Latency" value={metrics.avgLatency} unit="ms" color="amber" />
-        <MetricCard label="P99 Latency" value={metrics.p99Latency} unit="ms" color="red" />
+        <MetricCard label="Avg Latency" value={formatDecimal(metrics.avgLatency)} unit="ms" color="amber" />
+        <MetricCard label="P99 Latency" value={formatDecimal(metrics.p99Latency)} unit="ms" color="red" />
         <MetricCard label="Active Servers" value={`${metrics.activeServers}/${metrics.totalServers}`} color="emerald" />
-        <MetricCard label="Cache Hit Rate" value={metrics.cacheHitRate} unit="%" color="purple" />
+        <MetricCard label="Cache Hit Rate" value={formatDecimal(metrics.cacheHitRate)} unit="%" color="purple" />
       </div>
 
-      {/* Traffic Chart */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-base font-semibold text-white">Request Rate</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Actual vs Predicted (last 60 seconds)</p>
+            <h2 className="text-base font-semibold text-white">System Load Profile</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Actual vs Predicted Composite Load (last 60 seconds)</p>
           </div>
           <div className="flex items-center gap-4 text-xs">
             <span className="flex items-center gap-1.5">
@@ -80,8 +80,10 @@ export default function TrafficOverview({ metrics, trafficHistory }) {
               tick={{ fill: '#6b7280', fontSize: 11 }}
               axisLine={{ stroke: '#374151' }}
               tickLine={false}
+              tickFormatter={(value) => formatDecimal(value)}
             />
             <Tooltip
+              formatter={(value) => formatDecimal(value)}
               contentStyle={{
                 backgroundColor: '#111827',
                 border: '1px solid #374151',
@@ -96,7 +98,7 @@ export default function TrafficOverview({ metrics, trafficHistory }) {
         </ResponsiveContainer>
       </div>
 
-      {/* Load Gauge */}
+      {}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-5">
           <h3 className="text-sm font-semibold text-white mb-3">Current Load</h3>
@@ -108,7 +110,7 @@ export default function TrafficOverview({ metrics, trafficHistory }) {
               style={{ width: `${Math.min(100, metrics.currentLoad)}%` }}
             />
           </div>
-          <p className="text-xs text-gray-400 mt-2">{metrics.currentLoad}% capacity utilized</p>
+          <p className="text-xs text-gray-400 mt-2">{formatDecimal(metrics.currentLoad)}% capacity utilized</p>
         </div>
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-5">
           <h3 className="text-sm font-semibold text-white mb-3">Predicted Load</h3>
@@ -120,11 +122,11 @@ export default function TrafficOverview({ metrics, trafficHistory }) {
               style={{ width: `${Math.min(100, metrics.predictedLoad)}%` }}
             />
           </div>
-          <p className="text-xs text-gray-400 mt-2">{metrics.predictedLoad}% predicted load</p>
+          <p className="text-xs text-gray-400 mt-2">{formatDecimal(metrics.predictedLoad)}% predicted load</p>
         </div>
       </div>
 
-      {/* Uptime */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-300">System Uptime</span>

@@ -12,15 +12,18 @@ Server *get_best_server(ServerPool *pool) {
         if (s->status != healthy) continue;
         if (s->active_connections >= s->max_connections) continue;
 
-        double wlc = (double)s->active_connections / s->weight;
+        double weight = s->weight > 0.0 ? s->weight : 1.0;
 
-        /* EMA latency factor: normalize against 500ms reference.
-           A server averaging 50ms scores +5, one at 500ms scores +50.
-           This breaks ties at equal connection counts (idle servers)
-           and gently penalizes consistently slow backends under load. */
-        double latency_factor = s->ema_latency / 500.0;
+        double active_factor = (double)s->active_connections / weight;
+        double history_factor = (double)s->requests / weight;
 
-        double score = wlc * 1000.0 + latency_factor * 50.0 + compute_score(s) * 0.001;
+        double latency_factor = s->ema_latency / 1000.0;
+
+        double score = active_factor * 1000.0
+                     + history_factor
+                     + latency_factor * 10.0
+                     + compute_score(s) * 0.001;
+                     
         if (score < best_score) {
             best_score = score;
             best = s;
@@ -28,16 +31,20 @@ Server *get_best_server(ServerPool *pool) {
     }
     if (best) return best;
 
-    /* Fallback: accept degraded servers (skip only overloaded) */
     best_score = DBL_MAX;
     for (int i = 0; i < pool->count; i++) {
         Server *s = &pool->servers[i];
         if (s->status == overloaded) continue;
         if (s->active_connections >= s->max_connections) continue;
 
-        double wlc = (double)s->active_connections / s->weight;
-        double latency_factor = s->ema_latency / 500.0;
-        double score = wlc * 1000.0 + latency_factor * 50.0 + compute_score(s) * 0.001;
+        double weight = s->weight > 0.0 ? s->weight : 1.0;
+        double active_factor = (double)s->active_connections / weight;
+        double history_factor = (double)s->requests / weight;
+        double latency_factor = s->ema_latency / 1000.0;
+        double score = active_factor * 1000.0
+                     + history_factor
+                     + latency_factor * 10.0
+                     + compute_score(s) * 0.001;
         if (score < best_score) {
             best_score = score;
             best = s;
@@ -62,7 +69,8 @@ cJSON *route_request(ServerPool *pool, const char *request_id, const char *url) 
     chosen->active_connections++;
     chosen->total_connections++;
     chosen->requests++;
-    chosen->score = score;
+    float final_score = compute_score(chosen);
+    chosen->score = (double)final_score;
 
     cJSON *resp = cJSON_CreateObject();
     cJSON_AddStringToObject(resp, "type", "route_response");

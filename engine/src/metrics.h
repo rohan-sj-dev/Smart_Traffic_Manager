@@ -7,7 +7,7 @@
 #include "compat.h"
 #include "server_pool.h"
 
-#define METRICS_HISTORY_SIZE 300 /* 5 minutes at 1-second intervals */
+#define METRICS_HISTORY_SIZE 300 
 
 typedef struct {
     double rps;
@@ -28,7 +28,6 @@ typedef struct {
     int history_count;
     int history_index;
 
-    
     long interval_requests;
     long interval_errors;
     double interval_latency_sum;

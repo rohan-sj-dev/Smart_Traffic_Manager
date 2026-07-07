@@ -1,0 +1,45 @@
+{
+  "startedAt": "2026-07-07T15:36:09.108Z",
+  "durationS": 20,
+  "concurrency": 100,
+  "rr": {
+    "algo": "rr",
+    "concurrency": 100,
+    "durationS": 20,
+    "totalRequests": 52787,
+    "ok": 52787,
+    "errors": 0,
+    "errorRate": 0,
+    "throughputRps": 2635.5,
+    "avgMs": 37.9,
+    "p50Ms": 36.4,
+    "p95Ms": 48.1,
+    "p99Ms": 62.1,
+    "maxMs": 94.6,
+    "perServer": {
+      "server-beta": 17596,
+      "server-gamma": 17596,
+      "server-alpha": 17595
+    }
+  },
+  "wlc": {
+    "algo": "wlc",
+    "concurrency": 100,
+    "durationS": 20,
+    "totalRequests": 53376,
+    "ok": 53376,
+    "errors": 0,
+    "errorRate": 0,
+    "throughputRps": 2664.7,
+    "avgMs": 37.5,
+    "p50Ms": 36.9,
+    "p95Ms": 45.8,
+    "p99Ms": 53.8,
+    "maxMs": 90.9,
+    "perServer": {
+      "server-gamma": 8248,
+      "server-beta": 17847,
+      "server-alpha": 27281
+    }
+  }
+}

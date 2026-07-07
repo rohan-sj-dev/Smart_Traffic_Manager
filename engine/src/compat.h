@@ -1,10 +1,6 @@
+/* This file was created with the assistance of an LLM for cross-platform compatibility logic. */
 #ifndef COMPAT_H
 #define COMPAT_H
-
-/*
- * Cross-platform threading compatibility layer.
- * Uses Win32 threads on Windows, pthreads elsewhere.
- */
 
 #ifdef _WIN32
 
@@ -42,7 +38,7 @@ static inline void compat_sleep_ms(int ms) {
     Sleep(ms);
 }
 
-#else /* POSIX */
+#else 
 
 #include <pthread.h>
 #include <time.h>
@@ -77,6 +73,6 @@ static inline void compat_sleep_ms(int ms) {
     nanosleep(&ts, NULL);
 }
 
-#endif /* _WIN32 */
+#endif 
 
-#endif /* COMPAT_H */
+#endif

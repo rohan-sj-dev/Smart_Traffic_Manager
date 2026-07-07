@@ -42,4 +42,4 @@ double predictor_update(Predictor *p, double observed);
 
 cJSON *predictor_to_json(Predictor *p);
 
-#endif /* PREDICTOR_H */
+#endif

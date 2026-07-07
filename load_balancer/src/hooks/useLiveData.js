@@ -12,6 +12,7 @@ import {
 } from '../services/mockData';
 
 const WS_URL = 'ws://localhost:4000';
+const API_BASE = 'http://localhost:4000';
 const RECONNECT_MS = 3000;
 
 const roundDecimals = (obj) => {
@@ -31,11 +32,6 @@ const roundDecimals = (obj) => {
   return obj;
 };
 
-/**
- * Real-time data hook.
- * Connects to the bridge WebSocket for live data.
- * Falls back to mock data when the bridge is unreachable.
- */
 export function useLiveData(intervalMs = 1000) {
   const [metrics, setMetrics] = useState(generateSystemMetrics);
   const [servers, setServers] = useState(() => generateServers(3));
@@ -44,14 +40,16 @@ export function useLiveData(intervalMs = 1000) {
   const [predictions, setPredictions] = useState(generatePredictions);
   const [scalingEvents, setScalingEvents] = useState(() => generateScalingEvents(15));
   const [scalingConfig, setScalingConfig] = useState(generateScalingConfig);
-  const [logs, setLogs] = useState(() => generateLogs(50));
+  const [logs, setLogs] = useState(() => generateLogs(200));
+  const [logStats, setLogStats] = useState({ total: 0, hits: 0, errors: 0, avgLatency: 0 });
   const [connected, setConnected] = useState(false);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const fallbackRef = useRef(null);
   const liveRef = useRef(false);
+  const logRangeRef = useRef('24h');
+  const connectWsRef = useRef(null);
 
-  // ── Mock-data fallback (runs only when WS is disconnected) ────────────
   const startMockFallback = useCallback(() => {
     if (fallbackRef.current) return;
     fallbackRef.current = setInterval(() => {
@@ -74,9 +72,8 @@ export function useLiveData(intervalMs = 1000) {
     if (fallbackRef.current) { clearInterval(fallbackRef.current); fallbackRef.current = null; }
   }, []);
 
-  // ── WebSocket connection ──────────────────────────────────────────────
   const connectWs = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState <= 1) return; // already open/connecting
+    if (wsRef.current && wsRef.current.readyState <= 1) return;
 
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
@@ -102,11 +99,10 @@ export function useLiveData(intervalMs = 1000) {
             if (d.predictions) setPredictions(d.predictions);
             if (d.scalingEvents) setScalingEvents([...d.scalingEvents].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
             if (d.scalingConfig) setScalingConfig(d.scalingConfig);
-            if (d.logs) setLogs([...d.logs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
             break;
           }
           case 'log':
-            setLogs(prev => [msg.data, ...prev.slice(0, 199)]);
+            setLogs(prev => [msg.data, ...prev.slice(0, 1999)]);
             break;
           case 'scaling_event':
             setScalingEvents(prev => [{ id: prev.length + 1, ...msg.data }, ...prev]);
@@ -117,14 +113,16 @@ export function useLiveData(intervalMs = 1000) {
           default:
             break;
         }
-      } catch (_) { /* ignore malformed frames */ }
+      } catch {  }
     };
 
     ws.onclose = () => {
       setConnected(false);
       liveRef.current = false;
       startMockFallback();
-      reconnectRef.current = setTimeout(connectWs, RECONNECT_MS);
+      reconnectRef.current = setTimeout(() => {
+        connectWsRef.current?.();
+      }, RECONNECT_MS);
     };
 
     ws.onerror = () => {
@@ -133,8 +131,9 @@ export function useLiveData(intervalMs = 1000) {
   }, [stopMockFallback, startMockFallback]);
 
   useEffect(() => {
+    connectWsRef.current = connectWs;
     connectWs();
-    // Start mock fallback immediately (it'll be stopped once WS connects)
+
     startMockFallback();
 
     return () => {
@@ -144,13 +143,37 @@ export function useLiveData(intervalMs = 1000) {
     };
   }, [connectWs, startMockFallback, stopMockFallback]);
 
-  const refreshLogs = useCallback(() => {
+  const refreshLogs = useCallback((range = logRangeRef.current, from, to) => {
+    logRangeRef.current = range;
     if (liveRef.current && wsRef.current?.readyState === 1) {
       wsRef.current.send(JSON.stringify({ type: 'get_status' }));
-    } else {
-      setLogs(generateLogs(50));
     }
+
+    let url = `${API_BASE}/api/logs?source=db&range=${encodeURIComponent(range)}&limit=2000`;
+    if (from) url += `&from=${encodeURIComponent(from)}`;
+    if (to) url += `&to=${encodeURIComponent(to)}`;
+
+    fetch(url)
+      .then(res => res.ok ? res.json() : Promise.reject(new Error('Could not load DB logs')))
+      .then(data => {
+        if (Array.isArray(data.logs)) {
+          setLogs(data.logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+          if (data.stats) {
+            setLogStats(data.stats);
+          }
+        }
+      })
+      .catch(() => {
+
+        if (!liveRef.current) {
+           setLogs(prev => prev.length === 0 ? generateLogs(200) : prev);
+        }
+      });
   }, []);
+
+  useEffect(() => {
+    if (connected) refreshLogs();
+  }, [connected, refreshLogs]);
 
   const refreshScalingEvents = useCallback(() => {
     if (liveRef.current && wsRef.current?.readyState === 1) {
@@ -194,6 +217,7 @@ export function useLiveData(intervalMs = 1000) {
     scalingEvents,
     scalingConfig,
     logs,
+    logStats,
     refreshLogs,
     refreshScalingEvents,
     setScalingLimits,

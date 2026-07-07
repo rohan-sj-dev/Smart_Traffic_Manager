@@ -9,35 +9,21 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const startTime = Date.now();
 let activeConnections = 0;
 
-/* ── Capacity profile ─────────────────────────────────────────────
-   SERVER_CAPACITY (0.1–1.0): simulates weaker/stronger hardware.
-   A capacity of 0.5 means:
-     - heavy endpoints take 2× longer (real blocking delay)
-     - CPU  reports as baseCPU  / capacity  (same work = more effort)
-     - Memory reports as baseMem / capacity  (less headroom)
-   This makes the load balancer naturally prefer higher-capacity servers.
-   ──────────────────────────────────────────────────────────────── */
 const CAPACITY = Math.min(1.0, Math.max(0.1, parseFloat(process.env.SERVER_CAPACITY || '1.0')));
 
-/* Synchronous busy-wait: simulates slower CPU for low-capacity servers */
 function capacityDelay(baseMs) {
     if (CAPACITY >= 1.0) return;
     const extraMs = Math.round(baseMs * (1.0 / CAPACITY - 1.0));
     const end = Date.now() + extraMs;
-    while (Date.now() < end) { /* spin */ }
+    while (Date.now() < end) {  }
 }
 
-/* ΓöÇΓöÇ Middleware: track active connections ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 app.use((req, res, next) => {
     activeConnections++;
     res.on('finish', () => { activeConnections--; });
     next();
 });
 
-/* Per-process CPU sampling.
-   Each server is a separate Node process, so process.cpuUsage() reports CPU
-   time used by THIS server alone. Busier processes report higher values; idle
-   ones near zero. Sampled every 1s so /health returns "% of a single core". */
 let prevCpu = process.cpuUsage();
 let prevHr = process.hrtime.bigint();
 let cpuPercent = 0;
@@ -51,7 +37,6 @@ setInterval(() => {
     prevHr = nowHr;
 }, 1000);
 
-/* ΓöÇΓöÇ Helper: wrap response with timing + server id ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 function respond(res, result) {
     res.json({
         result,
@@ -60,20 +45,13 @@ function respond(res, result) {
     });
 }
 
-/* ================================================================
-   GET /health  ΓÇö  Health check endpoint
-   ================================================================ */
 app.get('/health', (req, res) => {
-    /* Per-process CPU%: capacity-scaled so weaker boxes report higher utilization
-       for the same workload. Cap at 99. */
+    
     const procCpu = Math.min(99, cpuPercent / CAPACITY);
 
-    /* Per-process memory: RSS as a fraction of a notional 256MB budget per
-       server, scaled by capacity. Memory naturally diverges across processes
-       because V8 heap growth is driven by per-process workload. */
     const rssMB = process.memoryUsage().rss / (1024 * 1024);
     const memBudgetMB = 256;
-    const procMem = Math.min(99, (rssMB / memBudgetMB) * 100 / CAPACITY);
+    const procMem = Math.min(99, (rssMB / memBudgetMB) * 100);
 
     res.json({
         status: 'healthy',
@@ -88,9 +66,6 @@ app.get('/health', (req, res) => {
     });
 });
 
-/* ================================================================
-   GET /data  ΓÇö  Simple cacheable JSON response (same every time)
-   ================================================================ */
 const STATIC_DATA = {
     datasets: [
         { id: 1, name: 'MNIST', samples: 60000, features: 784, description: 'Handwritten digits' },
@@ -107,10 +82,6 @@ app.get('/data', (req, res) => {
     respond(res, STATIC_DATA);
 });
 
-/* ================================================================
-   GET /cpu  ΓÇö  CPU-intensive workload
-   Matrix multiplication + prime factorization + Fibonacci
-   ================================================================ */
 function matrixMultiply(size) {
     const A = [];
     const B = [];
@@ -132,7 +103,7 @@ function matrixMultiply(size) {
             }
         }
     }
-    return C[0][0]; // Return top-left element as proof of work
+    return C[0][0];
 }
 
 function primeFactors(n) {
@@ -163,7 +134,7 @@ app.get('/cpu', (req, res) => {
     const matrixResult = matrixMultiply(50);
     const factors = primeFactors(1234567890);
     const fib = fibonacci(30);
-    capacityDelay(30);   // weaker servers spin longer
+    capacityDelay(30);
 
     const processingTime = Date.now() - start;
     respond(res, {
@@ -175,12 +146,8 @@ app.get('/cpu', (req, res) => {
     });
 });
 
-/* ================================================================
-   GET /ml  ΓÇö  ML simulation: gradient descent linear regression
-   Trains a linear model on synthetic data from scratch
-   ================================================================ */
 function gradientDescent(numSamples, learningRate, epochs) {
-    // Generate synthetic data: y = 3x + 7 + noise
+
     const X = [];
     const y = [];
     for (let i = 0; i < numSamples; i++) {
@@ -189,12 +156,10 @@ function gradientDescent(numSamples, learningRate, epochs) {
         y.push(3 * xi + 7 + (Math.random() - 0.5) * 2);
     }
 
-    // Initialize weights
     let w = Math.random();
     let b = Math.random();
     const lossHistory = [];
 
-    // Train
     for (let epoch = 0; epoch < epochs; epoch++) {
         let dw = 0;
         let db = 0;
@@ -242,10 +207,6 @@ app.get('/ml', (req, res) => {
     });
 });
 
-/* ================================================================
-   GET /image  ΓÇö  Image processing simulation
-   Generate pixel array, apply Gaussian blur + edge detection
-   ================================================================ */
 function generateImage(width, height) {
     const pixels = new Float64Array(width * height);
     for (let i = 0; i < pixels.length; i++) {
@@ -312,7 +273,6 @@ app.get('/image', (req, res) => {
     const { edges, max_gradient } = sobelEdgeDetect(blurred, width, height);
     capacityDelay(60);
 
-    // Compute stats
     let edgeSum = 0;
     let edgeCount = 0;
     for (let i = 0; i < edges.length; i++) {
@@ -335,15 +295,10 @@ app.get('/image', (req, res) => {
     });
 });
 
-/* ================================================================
-   GET /api/train  ΓÇö  Extended ML training (heavier workload)
-   Multiple epochs of multi-feature regression
-   ================================================================ */
 app.get('/api/train', (req, res) => {
     const start = Date.now();
     capacityDelay(80);
 
-    // Multi-feature dataset: y = 2*x1 + 3*x2 - 1.5*x3 + 10
     const numSamples = 500;
     const numFeatures = 3;
     const trueWeights = [2, 3, -1.5];
@@ -363,7 +318,6 @@ app.get('/api/train', (req, res) => {
         y.push(target + (Math.random() - 0.5) * 3);
     }
 
-    // Train with gradient descent
     const weights = new Array(numFeatures).fill(0).map(() => Math.random() - 0.5);
     let bias = 0;
     const lr = 0.001;
@@ -407,13 +361,9 @@ app.get('/api/train', (req, res) => {
     });
 });
 
-/* ================================================================
-   GET /api/predict  ΓÇö  Run inference on a trained model
-   ================================================================ */
 app.get('/api/predict', (req, res) => {
     const start = Date.now();
 
-    // Simulate inference: generate batch of predictions
     const batchSize = 100;
     const weights = [2.01, 2.98, -1.49];
     const bias = 9.95;
@@ -444,16 +394,19 @@ app.get('/api/predict', (req, res) => {
     });
 });
 
-/* ================================================================
-   GET /api/datasets  ΓÇö  List available training datasets
-   ================================================================ */
 app.get('/api/datasets', (req, res) => {
     respond(res, STATIC_DATA);
 });
 
-/* ================================================================
-   Start server
-   ================================================================ */
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[${SERVER_ID}] Backend server running on port ${PORT}`);
+});
+
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`[${SERVER_ID}] Port ${PORT} is already in use. Stop the existing backend or let the bridge reuse it.`);
+        process.exit(0);
+    }
+    console.error(`[${SERVER_ID}] Failed to start backend: ${err.message}`);
+    process.exit(1);
 });

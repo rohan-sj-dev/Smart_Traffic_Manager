@@ -1,31 +1,22 @@
 import { NavLink } from 'react-router-dom';
 import {
-  BarChart3,
-  Server,
-  Database,
-  BrainCircuit,
-  Scaling,
-  ScrollText,
-  Activity,
-  Zap,
   Wifi,
   WifiOff,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { to: '/', icon: BarChart3, label: 'Traffic Overview' },
-  { to: '/servers', icon: Server, label: 'Servers' },
-  { to: '/cache', icon: Database, label: 'Edge Cache' },
-  { to: '/predictions', icon: BrainCircuit, label: 'Predictions' },
-  { to: '/autoscaling', icon: Scaling, label: 'Auto-Scaling' },
-  { to: '/logs', icon: ScrollText, label: 'Logs' },
-  { to: '/simulator', icon: Zap, label: 'Simulator' },
+  { to: '/', label: 'Traffic Overview' },
+  { to: '/servers', label: 'Servers' },
+  { to: '/cache', label: 'Edge Cache' },
+  { to: '/predictions', label: 'Predictions' },
+  { to: '/autoscaling', label: 'Auto-Scaling' },
+  { to: '/logs', label: 'Logs' },
+  { to: '/simulator', label: 'Simulator' },
 ];
 
 export default function Sidebar({ connected }) {
   return (
     <aside className="w-64 min-h-screen bg-gray-950 border-r border-gray-800 flex flex-col">
-      {/* Logo */}
       <div className="px-5 py-6 border-b border-gray-800">
         <div className="flex items-center gap-3">
           
@@ -36,9 +27,9 @@ export default function Sidebar({ connected }) {
         </div>
       </div>
 
-      {/* Navigation */}
+      {}
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
+        {NAV_ITEMS.map(({ to, label }) => (
           <NavLink
             key={to}
             to={to}
@@ -56,7 +47,7 @@ export default function Sidebar({ connected }) {
         ))}
       </nav>
 
-      {/* Connection Status */}
+      {}
       <div className="px-4 py-4 border-t border-gray-800">
         <div className="flex items-center gap-2">
           {connected ? (

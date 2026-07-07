@@ -1,22 +1,49 @@
-import { useState, useEffect } from "react";
-import { useSimulator } from "../hooks/useSimulator";
+import { useRef, useState } from "react";
+import { runLoadBatch } from "../services/loadBridge";
+import { updateWorkload } from "../services/workloadStore";
 
 export default function ImageProcessing() {
   const [file, setFile] = useState(null);
   const [runs, setRuns] = useState(10);
+  const [concurrency, setConcurrency] = useState(2);
   const [running, setRunning] = useState(false);
-  const { connected, simulateLoad } = useSimulator();
+  const [stats, setStats] = useState({ completed: 0, failed: 0, lastLatency: 0, durationMs: 0 });
+  const [logs, setLogs] = useState(["[INFO] Waiting for image task..."]);
+  const runTokenRef = useRef(0);
 
-  useEffect(() => {
-    let interval;
-    if (running && connected) {
-      interval = setInterval(() => {
-        const count = Math.min(1000, parseInt(runs, 10) || 1);
-        simulateLoad("/image", count, "POST");
-      }, 1000);
+  const startImageLoad = async () => {
+    const token = runTokenRef.current + 1;
+    runTokenRef.current = token;
+    setRunning(true);
+    updateWorkload('image', { running: true, count: runs });
+    setStats({ completed: 0, failed: 0, lastLatency: 0, durationMs: 0 });
+    setLogs([`[INFO] Sending ${runs} image request(s) through the load balancer...`]);
+
+    const result = await runLoadBatch({
+      url: "/image",
+      totalRuns: runs,
+      concurrency,
+      isActive: () => runTokenRef.current === token,
+      onProgress: (next) => {
+        setStats(prev => ({ ...prev, ...next }));
+        if (next.error) setLogs(prev => [`[ERROR] ${next.error}`, ...prev].slice(0, 20));
+      },
+    });
+
+    if (runTokenRef.current === token) {
+      setStats(prev => ({ ...prev, durationMs: result.durationMs, failed: result.failed }));
+      setLogs(prev => [`[DONE] Completed ${result.completed}, failed ${result.failed}.`, ...prev].slice(0, 20));
+      setRunning(false);
+      updateWorkload('image', { running: false });
     }
-    return () => clearInterval(interval);
-  }, [running, connected, runs, simulateLoad]);
+  };
+
+  const stopImageLoad = () => {
+    runTokenRef.current += 1;
+    setRunning(false);
+    updateWorkload('image', { running: false });
+    setLogs(prev => ["[INFO] Stop requested.", ...prev].slice(0, 20));
+  };
 
   return (
     <div className="p-6 text-white max-w-7xl mx-auto">
@@ -25,7 +52,7 @@ export default function ImageProcessing() {
         Image Processing
       </h1>
 
-      {/* Config */}
+      {}
       <div className="bg-[#0f172a] p-6 rounded-2xl border border-gray-800 mb-10">
 
         <h2 className="text-lg font-semibold mb-4">Configuration</h2>
@@ -39,7 +66,7 @@ export default function ImageProcessing() {
 
             <div className="flex items-center gap-4">
 
-                {/* Hidden Input */}
+                {}
                 <input
                 type="file"
                 id="fileUpload"
@@ -47,7 +74,7 @@ export default function ImageProcessing() {
                 className="hidden"
                 />
 
-                {/* Custom Button */}
+                {}
                 <label
                 htmlFor="fileUpload"
                 className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 
@@ -56,7 +83,7 @@ export default function ImageProcessing() {
                 Choose File
                 </label>
 
-                {/* File Name */}
+                {}
                 <span className="text-sm text-gray-400">
                 {file ? file.name : "No file chosen"}
                 </span>
@@ -64,7 +91,7 @@ export default function ImageProcessing() {
             </div>
           </div>
 
-          {/* Operation */}
+          {}
           <div>
             <label className="block text-sm text-gray-400 mb-2">
                 Operation
@@ -76,7 +103,7 @@ export default function ImageProcessing() {
             </select>
           </div>
 
-          {/* Runs */}
+          {}
           <div>
             <label className="block text-sm text-gray-400 mb-2">
                 Runs
@@ -90,16 +117,29 @@ export default function ImageProcessing() {
             />
          </div>
 
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">
+                Concurrency
+            </label>
+            <input
+                type="number"
+                value={concurrency}
+                onChange={(e) => setConcurrency(e.target.value)}
+                placeholder="Concurrency"
+                className="w-full p-3 rounded-lg bg-[#020617] border border-gray-800 focus:outline-none focus:border-indigo-500"
+            />
+         </div>
+
         </div>
 
         <div className="flex gap-4 mt-6">
-          <button onClick={() => setRunning(true)} className="bg-green-500 px-5 py-2 rounded-lg">Start</button>
-          <button onClick={() => setRunning(false)} className="bg-red-500 px-5 py-2 rounded-lg">Stop</button>
+          <button onClick={startImageLoad} disabled={running} className="bg-green-500 disabled:opacity-50 px-5 py-2 rounded-lg">Start</button>
+          <button onClick={stopImageLoad} className="bg-red-500 px-5 py-2 rounded-lg">Stop</button>
         </div>
 
       </div>
 
-      {/* Preview */}
+      {}
       <div className="bg-[#0f172a] p-6 rounded-2xl border border-gray-800 mb-10">
         {file ? (
           <img src={URL.createObjectURL(file)} className="h-40 rounded" />
@@ -108,11 +148,20 @@ export default function ImageProcessing() {
         )}
       </div>
 
-      {/* Status */}
-      <div className="bg-[#0f172a] p-5 rounded-2xl border border-gray-800 h-24 text-gray-400">
-        <p>Status: <span className={`font-medium ${!connected ? "text-amber-400" : running ? "text-green-400" : "text-red-400"}`}>
-          {!connected ? "Connecting to Engine..." : running ? "Image Workload Active" : "Stopped"}
-        </span></p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-10">
+        <div className="bg-[#0f172a] p-5 rounded-2xl border border-gray-800">
+          <p className="text-gray-400">Last Execution Time</p>
+          <h2 className="text-xl font-bold">{Math.round(stats.lastLatency)} ms</h2>
+        </div>
+        <div className="bg-[#0f172a] p-5 rounded-2xl border border-gray-800">
+          <p className="text-gray-400">Completed Runs</p>
+          <h2 className="text-xl font-bold">{stats.completed}/{runs}</h2>
+        </div>
+      </div>
+
+      {}
+      <div className="bg-[#0f172a] p-5 rounded-2xl border border-gray-800 h-40 overflow-y-auto text-gray-400">
+        {logs.map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}
       </div>
 
     </div>

@@ -30,7 +30,7 @@ typedef struct {
     double cpu;
     double memory;
     double score;
-    double ema_latency;   /* EMA of response latency (ms), alpha=0.2 */
+    double ema_latency;   
 } Server;
 
 typedef struct {
@@ -38,7 +38,6 @@ typedef struct {
     int count;
     compat_mutex_t lock;
 } ServerPool;
-
 
 void server_pool_init(ServerPool *pool);
 void server_pool_destroy(ServerPool *pool);

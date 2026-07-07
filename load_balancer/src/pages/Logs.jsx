@@ -1,6 +1,10 @@
 import { useState, useMemo } from 'react';
 import { ScrollText, RefreshCw, CheckCircle, XCircle, Filter, X } from 'lucide-react';
 
+function formatDecimal(value, decimals = 1) {
+  return value !== undefined && value !== null ? Number(value).toFixed(decimals) : '0.0';
+}
+
 function StatusCodeBadge({ code }) {
   const color = code < 300 ? 'text-emerald-400' : code < 400 ? 'text-cyan-400' : code < 500 ? 'text-amber-400' : 'text-red-400';
   return <span className={`font-mono text-xs ${color}`}>{code}</span>;
@@ -8,17 +12,24 @@ function StatusCodeBadge({ code }) {
 
 function LatencyBadge({ latency }) {
   const color = latency < 100 ? 'text-emerald-400' : latency < 300 ? 'text-amber-400' : 'text-red-400';
-  return <span className={`font-mono text-xs ${color}`}>{latency}ms</span>;
+  return <span className={`font-mono text-xs ${color}`}>{formatDecimal(latency)}ms</span>;
 }
 
-/* datetime-local value (YYYY-MM-DDTHH:mm) ↔ epoch ms */
 function toLocalDateTime(ms) {
   const d = new Date(ms);
   const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-export default function Logs({ logs, onRefresh }) {
+function parseDateTimeBound(value, endOfUnit = false) {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  if (!Number.isFinite(parsed)) return null;
+  if (!endOfUnit) return parsed;
+  return value.length <= 16 ? parsed + 59999 : parsed + 999;
+}
+
+export default function Logs({ logs, logStats, onRefresh }) {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [methodFilter, setMethodFilter] = useState('ALL');
@@ -26,8 +37,8 @@ export default function Logs({ logs, onRefresh }) {
   const [urlFilter, setUrlFilter] = useState('');
 
   const filteredLogs = useMemo(() => {
-    const fromMs = fromDate ? new Date(fromDate).getTime() : null;
-    const toMs = toDate ? new Date(toDate).getTime() : null;
+    const fromMs = parseDateTimeBound(fromDate);
+    const toMs = parseDateTimeBound(toDate, true);
     const urlQ = urlFilter.trim().toLowerCase();
 
     return logs.filter((log) => {
@@ -49,10 +60,13 @@ export default function Logs({ logs, onRefresh }) {
     : 0;
   const errorCount = filteredLogs.filter((l) => l.statusCode >= 500).length;
 
-  const setQuickRange = (minutes) => {
+  const setQuickRange = (minutes, dbRange) => {
     const now = Date.now();
-    setFromDate(toLocalDateTime(now - minutes * 60 * 1000));
-    setToDate(toLocalDateTime(now));
+    const from = toLocalDateTime(now - minutes * 60 * 1000);
+    const to = toLocalDateTime(now);
+    setFromDate(from);
+    setToDate(to);
+    onRefresh?.(dbRange, from, to);
   };
 
   const clearFilters = () => {
@@ -63,47 +77,64 @@ export default function Logs({ logs, onRefresh }) {
     setUrlFilter('');
   };
 
+  const handleFetch = () => {
+    onRefresh?.('custom', fromDate, toDate);
+  };
+
   const hasFilters = fromDate || toDate || methodFilter !== 'ALL' || statusFilter !== 'ALL' || urlFilter;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Request Logs</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <ScrollText className="w-7 h-7 text-indigo-500" />
+            Request Logs
+          </h1>
           <p className="text-sm text-gray-500 mt-1">
             Showing {filteredLogs.length} of {logs.length} requests
           </p>
         </div>
         <button
-          onClick={onRefresh}
+          onClick={() => onRefresh?.()}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-300 text-xs hover:bg-gray-700 transition-colors"
         >
           <RefreshCw className="w-3.5 h-3.5" />
-          Refresh
+          Refresh Live
         </button>
       </div>
 
-      {/* Filter Panel */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold text-white">
             <Filter className="w-4 h-4 text-indigo-400" />
-            Filters
+            Filters & History
           </div>
-          {hasFilters && (
+          <div className="flex items-center gap-4">
+            {hasFilters && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200"
+              >
+                <X className="w-3 h-3" /> Clear
+              </button>
+            )}
             <button
-              onClick={clearFilters}
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200"
+              onClick={handleFetch}
+              disabled={!fromDate || !toDate}
+              className="px-3 py-1 bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 rounded-md text-xs hover:bg-indigo-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <X className="w-3 h-3" /> Clear
+              Fetch History
             </button>
-          )}
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-[11px] text-gray-500 uppercase tracking-wider">From</span>
             <input
               type="datetime-local"
+              step={1}
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
               className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-indigo-500"
@@ -113,6 +144,7 @@ export default function Logs({ logs, onRefresh }) {
             <span className="text-[11px] text-gray-500 uppercase tracking-wider">To (until)</span>
             <input
               type="datetime-local"
+              step={1}
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
               className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-indigo-500"
@@ -159,6 +191,7 @@ export default function Logs({ logs, onRefresh }) {
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <span className="text-[11px] text-gray-500">Quick:</span>
           {[
+            { label: '1m', min: 1 },
             { label: '5m', min: 5 },
             { label: '15m', min: 15 },
             { label: '1h', min: 60 },
@@ -167,7 +200,7 @@ export default function Logs({ logs, onRefresh }) {
           ].map((r) => (
             <button
               key={r.label}
-              onClick={() => setQuickRange(r.min)}
+              onClick={() => setQuickRange(r.min, r.label)}
               className="px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-[11px] text-gray-300 hover:bg-gray-700"
             >
               Last {r.label}
@@ -176,27 +209,35 @@ export default function Logs({ logs, onRefresh }) {
         </div>
       </div>
 
-      {/* Summary Stats */}
+      {}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-4 text-center">
-          <p className="text-xl font-bold text-white">{filteredLogs.length}</p>
+          <p className="text-xl font-bold text-white">
+            {logStats?.total > filteredLogs.length ? logStats.total : filteredLogs.length}
+          </p>
           <p className="text-xs text-gray-500">Total Requests</p>
         </div>
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-4 text-center">
-          <p className="text-xl font-bold text-white">{cacheHits}</p>
+          <p className="text-xl font-bold text-white">
+            {logStats?.hits > cacheHits ? logStats.hits : cacheHits}
+          </p>
           <p className="text-xs text-gray-500">Cache Hits</p>
         </div>
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-4 text-center">
-          <p className="text-xl font-bold text-white">{avgLatency}ms</p>
+          <p className="text-xl font-bold text-white">
+            {logStats?.avgLatency > 0 ? formatDecimal(logStats.avgLatency) : formatDecimal(avgLatency)}ms
+          </p>
           <p className="text-xs text-gray-500">Avg Latency</p>
         </div>
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-4 text-center">
-          <p className="text-xl font-bold text-white">{errorCount}</p>
+          <p className="text-xl font-bold text-white">
+            {logStats?.errors > errorCount ? logStats.errors : errorCount}
+          </p>
           <p className="text-xs text-gray-500">Errors (5xx)</p>
         </div>
       </div>
 
-      {/* Log Table */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto max-h-150 overflow-y-auto">
           <table className="w-full text-sm">

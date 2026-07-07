@@ -1,31 +1,3 @@
-/*
- * Intelligent Load Balancer Engine
- * ================================
- * Core decision engine written in C.
- * Communicates via JSON over stdin/stdout with the Node.js bridge layer.
- *
- * Message Types (stdin):
- *   - route_request:   { type, request_id, url, method }
- *   - request_done:    { type, request_id, server_id, latency_ms, status_code, cache_hit }
- *   - health_update:   { type, server_id, cpu, memory, healthy }
- *   - add_server:      { type, id, ip, port, weight, max_connections }
- *   - remove_server:   { type, server_id }
- *   - cache_put:       { type, key, value, size, ttl }
- *   - cache_get:       { type, key }
- *   - cache_remove:    { type, key }
- *   - get_status:      { type }
- *   - shutdown:        { type }
- *
- * Message Types (stdout):
- *   - route_response:  routing decision with selected server
- *   - cache_response:  cache lookup result
- *   - scale_command:   auto-scaling decision
- *   - prediction:      current prediction state
- *   - metrics:         current metrics snapshot
- *   - status:          full engine status
- *   - error:           error message
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,15 +14,13 @@
 #include "scaler.h"
 #include "metrics.h"
 
-/* Global state */
 static ServerPool g_pool;
 static Cache g_cache;
 static Predictor g_predictor;
 static AutoScaler g_scaler;
 static MetricsCollector g_metrics;
-static volatile bool g_running = true;
+static bool g_running = true;
 
-/* Send a JSON message to stdout (one line, newline terminated) */
 static void send_message(cJSON *msg) {
     char *str = cJSON_PrintUnformatted(msg);
     if (str) {
@@ -60,7 +30,6 @@ static void send_message(cJSON *msg) {
     }
 }
 
-/* Send an error message */
 static void send_error(const char *msg) {
     cJSON *err = cJSON_CreateObject();
     cJSON_AddStringToObject(err, "type", "error");
@@ -69,12 +38,10 @@ static void send_error(const char *msg) {
     cJSON_Delete(err);
 }
 
-/* Handle: route_request */
 static void handle_route_request(cJSON *msg) {
     cJSON *req_id = cJSON_GetObjectItem(msg, "request_id");
     cJSON *url = cJSON_GetObjectItem(msg, "url");
 
-    /* Check cache first */
     if (url && url->valuestring) {
         char cached_value[CACHE_VAL_LEN];
         if (cache_get(&g_cache, url->valuestring, cached_value, sizeof(cached_value))) {
@@ -91,7 +58,6 @@ static void handle_route_request(cJSON *msg) {
         }
     }
 
-    /* Route via WLC */
     cJSON *resp = route_request(&g_pool,
         req_id ? req_id->valuestring : "",
         url ? url->valuestring : "");
@@ -99,7 +65,6 @@ static void handle_route_request(cJSON *msg) {
     cJSON_Delete(resp);
 }
 
-/* Handle: request_done */
 static void handle_request_done(cJSON *msg) {
     cJSON *server_id = cJSON_GetObjectItem(msg, "server_id");
     cJSON *latency   = cJSON_GetObjectItem(msg, "latency_ms");
@@ -112,7 +77,7 @@ static void handle_request_done(cJSON *msg) {
 
     if (server_id && server_id->valuestring) {
         release_server(&g_pool, server_id->valuestring);
-        /* Update per-server EMA latency — skip cache hits, no backend was involved */
+        
         if (!hit && lat > 0.0) {
             server_pool_update_latency(&g_pool, server_id->valuestring, lat);
         }
@@ -121,7 +86,6 @@ static void handle_request_done(cJSON *msg) {
     metrics_record_request(&g_metrics, lat, is_error, hit);
 }
 
-/* Handle: health_update */
 static void handle_health_update(cJSON *msg) {
     cJSON *sid = cJSON_GetObjectItem(msg, "server_id");
     cJSON *cpu = cJSON_GetObjectItem(msg, "cpu");
@@ -139,7 +103,6 @@ static void handle_health_update(cJSON *msg) {
         healthy ? cJSON_IsTrue(healthy) : true);
 }
 
-/* Handle: add_server */
 static void handle_add_server(cJSON *msg) {
     cJSON *id = cJSON_GetObjectItem(msg, "id");
     cJSON *jname = cJSON_GetObjectItem(msg, "name");
@@ -167,7 +130,6 @@ static void handle_add_server(cJSON *msg) {
     cJSON_Delete(resp);
 }
 
-/* Handle: remove_server */
 static void handle_remove_server(cJSON *msg) {
     cJSON *sid = cJSON_GetObjectItem(msg, "server_id");
     if (!sid || !sid->valuestring) {
@@ -185,7 +147,6 @@ static void handle_remove_server(cJSON *msg) {
     cJSON_Delete(resp);
 }
 
-/* Handle: cache_put */
 static void handle_cache_put(cJSON *msg) {
     cJSON *key = cJSON_GetObjectItem(msg, "key");
     cJSON *value = cJSON_GetObjectItem(msg, "value");
@@ -202,7 +163,6 @@ static void handle_cache_put(cJSON *msg) {
         ttl ? ttl->valueint : 300);
 }
 
-/* Handle: cache_get */
 static void handle_cache_get(cJSON *msg) {
     cJSON *key = cJSON_GetObjectItem(msg, "key");
     if (!key || !key->valuestring) {
@@ -224,7 +184,6 @@ static void handle_cache_get(cJSON *msg) {
     cJSON_Delete(resp);
 }
 
-/* Handle: cache_remove */
 static void handle_cache_remove(cJSON *msg) {
     cJSON *key = cJSON_GetObjectItem(msg, "key");
     if (!key || !key->valuestring) {
@@ -234,47 +193,44 @@ static void handle_cache_remove(cJSON *msg) {
     cache_remove(&g_cache, key->valuestring);
 }
 
-/* Handle: set_server_count — sync scaler's internal counter with bridge reality */
+static void handle_set_scaling_limits(cJSON *msg) {
+    cJSON *min = cJSON_GetObjectItem(msg, "minServers");
+    cJSON *max = cJSON_GetObjectItem(msg, "maxServers");
+    if (!min || !max) return;
+    scaler_set_limits(&g_scaler, min->valueint, max->valueint);
+}
+
 static void handle_set_server_count(cJSON *msg) {
     cJSON *count = cJSON_GetObjectItem(msg, "count");
     if (!count) return;
     scaler_set_count(&g_scaler, count->valueint);
 }
 
-/* Handle: get_status — return full engine state */
 static void handle_get_status(void) {
     cJSON *status = cJSON_CreateObject();
     cJSON_AddStringToObject(status, "type", "status");
 
-    /* Servers */
     cJSON *servers = server_pool_to_json(&g_pool);
     cJSON_AddItemToObject(status, "servers", servers);
 
-    /* Cache stats */
     cJSON *cache_stats = cache_stats_to_json(&g_cache);
     cJSON_AddItemToObject(status, "cache", cache_stats);
 
-    /* Cache top items */
     cJSON *cache_items = cache_top_items_json(&g_cache, 10);
     cJSON_AddItemToObject(status, "cache_items", cache_items);
 
-    /* Prediction */
     cJSON *pred = predictor_to_json(&g_predictor);
     cJSON_AddItemToObject(status, "prediction", pred);
 
-    /* Scaler config */
     cJSON *scaler_cfg = scaler_config_to_json(&g_scaler);
     cJSON_AddItemToObject(status, "scaling", scaler_cfg);
 
-    /* Scaling events */
     cJSON *events = scaler_events_to_json(&g_scaler, 20);
     cJSON_AddItemToObject(status, "scaling_events", events);
 
-    /* Metrics */
     cJSON *metrics = metrics_current_to_json(&g_metrics);
     cJSON_AddItemToObject(status, "metrics", metrics);
 
-    /* System */
     cJSON *sys = metrics_system_to_json(&g_metrics);
     cJSON_AddItemToObject(status, "system", sys);
 
@@ -282,7 +238,6 @@ static void handle_get_status(void) {
     cJSON_Delete(status);
 }
 
-/* Periodic tick thread: runs every second to flush metrics, update predictor/scaler */
 #ifdef _WIN32
 static DWORD WINAPI tick_thread(LPVOID arg) {
 #else
@@ -290,27 +245,23 @@ static void *tick_thread(void *arg) {
 #endif
     (void)arg;
     while (g_running) {
-        /* Compute aggregate CPU, memory, and connection utilization */
+        
         double total_cpu = 0.0, total_mem = 0.0;
         int total_active_conns = 0, total_max_conns = 0;
         compat_mutex_lock(&g_pool.lock);
-        int active = 0;        /* serving traffic: healthy or degraded */
+        int active = 0;        
         int overloaded_count = 0;
         for (int i = 0; i < g_pool.count; i++) {
             Status st = g_pool.servers[i].status;
             if (st == healthy || st == degraded) {
-                /* Degraded servers still contribute their (high) CPU/mem to the
-                   average — without this, crossing the 70% threshold makes a
-                   server "vanish" from the autoscaler's input and the composite
-                   load can fall while the system is actually overloading. */
+                
                 active++;
                 total_cpu += g_pool.servers[i].cpu;
                 total_mem += g_pool.servers[i].memory;
                 total_active_conns += g_pool.servers[i].active_connections;
                 total_max_conns += g_pool.servers[i].max_connections;
             } else if (st == overloaded) {
-                /* Treat overloaded as 100% saturated so the average doesn't
-                   collapse and the scaler is forced to scale up, not down. */
+                
                 overloaded_count++;
                 active++;
                 total_cpu += 100.0;
@@ -332,21 +283,13 @@ static void *tick_thread(void *arg) {
             conn_util = ((double)total_active_conns / total_max_conns) * 100.0;
         }
 
-        /* Flush metrics interval */
         metrics_flush_interval(&g_metrics, active, total_cpu, total_mem);
 
-        /* Get latest RPS for composite score */
         cJSON *current = metrics_current_to_json(&g_metrics);
         cJSON *rps_json = cJSON_GetObjectItem(current, "rps");
         double rps = rps_json ? rps_json->valuedouble : 0.0;
         cJSON_Delete(current);
 
-        /* Composite load score (0-100): weighted blend favoring REAL-TIME signals.
-           Connections and RPS update every request; CPU/mem are sampled via /health
-           polling and lag behind bursts (especially with sync busy-loops on the
-           backend that block the event loop and stall /health). So we trust
-           connections/RPS more.
-           Weights: ConnUtil 40%, RPS 25%, CPU 20%, Memory 15% */
         double rps_per_server = active > 0 ? rps / active : 0.0;
         double rps_score = rps_per_server > 30.0 ? 100.0 : (rps_per_server / 30.0) * 100.0;
         double composite = 0.40 * conn_util
@@ -356,10 +299,8 @@ static void *tick_thread(void *arg) {
         if (composite > 100.0) composite = 100.0;
         if (composite < 0.0)   composite = 0.0;
 
-        /* Update predictor with composite load score */
         predictor_update(&g_predictor, composite);
 
-        /* Evaluate auto-scaler */
         int delta = scaler_evaluate(&g_scaler, &g_predictor);
         if (delta != 0) {
             cJSON *cmd = scaler_decision_to_json(&g_scaler, delta);
@@ -367,22 +308,18 @@ static void *tick_thread(void *arg) {
             cJSON_Delete(cmd);
         }
 
-        /* Evict expired cache entries */
         cache_evict_expired(&g_cache);
 
-        /* Sleep 1 second */
         compat_sleep_ms(1000);
     }
     return 0;
 }
 
-/* Signal handler for graceful shutdown */
 static void signal_handler(int sig) {
     (void)sig;
     g_running = false;
 }
 
-/* Process a single JSON message */
 static void process_message(const char *line) {
     cJSON *msg = cJSON_Parse(line);
     if (!msg) {
@@ -417,6 +354,8 @@ static void process_message(const char *line) {
         handle_cache_remove(msg);
     } else if (strcmp(t, "set_server_count") == 0) {
         handle_set_server_count(msg);
+    } else if (strcmp(t, "set_scaling_limits") == 0) {
+        handle_set_scaling_limits(msg);
     } else if (strcmp(t, "get_status") == 0) {
         handle_get_status();
     } else if (strcmp(t, "shutdown") == 0) {
@@ -430,19 +369,19 @@ static void process_message(const char *line) {
     cJSON_Delete(msg);
 }
 
-int main(void) {
-    /* Setup signal handlers */
+int main() {
+    
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    /* Initialize all subsystems */
+    srand((unsigned int)time(NULL));
+
     server_pool_init(&g_pool);
-    cache_init(&g_cache, 1024);           /* 1024 entry cache */
-    predictor_init(&g_predictor, 0.5);    /* alpha = 0.5 — faster reaction for demos */
-    scaler_init(&g_scaler, 3, 10, 20.0, 12.0, 4);  /* dev tuning — up>20%, down<12%, cooldown=4s */
+    cache_init(&g_cache, 1024);           
+    predictor_init(&g_predictor, 0.5);    
+    scaler_init(&g_scaler, 3, 10, 20.0, 12.0, 4);  
     metrics_init(&g_metrics);
 
-    /* Send startup message */
     cJSON *startup = cJSON_CreateObject();
     cJSON_AddStringToObject(startup, "type", "engine_started");
     cJSON_AddStringToObject(startup, "version", "1.0.0");
@@ -453,16 +392,12 @@ int main(void) {
     send_message(startup);
     cJSON_Delete(startup);
 
-    /* Start the periodic tick thread */
     compat_thread_t tick;
     compat_thread_create(&tick, tick_thread, NULL);
 
-    /* Main message loop: read JSON from stdin line by line.
-       Static 512 KB buffer — kept off the stack to avoid stack overflow on Windows
-       (default stack is 1 MB; 512 KB on stack would blow it under load). */
     static char line_buf[524288];
     while (g_running && fgets(line_buf, sizeof(line_buf), stdin) != NULL) {
-        /* Strip trailing newline */
+        
         size_t len = strlen(line_buf);
         while (len > 0 && (line_buf[len - 1] == '\n' || line_buf[len - 1] == '\r')) {
             line_buf[--len] = '\0';
@@ -472,18 +407,15 @@ int main(void) {
         process_message(line_buf);
     }
 
-    /* Shutdown */
     g_running = false;
     compat_thread_join(tick);
 
-    /* Cleanup */
     server_pool_destroy(&g_pool);
     cache_destroy(&g_cache);
     predictor_destroy(&g_predictor);
     scaler_destroy(&g_scaler);
     metrics_destroy(&g_metrics);
 
-    /* Send shutdown confirmation */
     cJSON *bye = cJSON_CreateObject();
     cJSON_AddStringToObject(bye, "type", "engine_stopped");
     cJSON_AddNumberToObject(bye, "timestamp", (double)time(NULL));

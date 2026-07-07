@@ -67,7 +67,7 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
         </p>
       </div>
 
-      {/* Control Panel */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl p-5 space-y-4">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-white">Request Configuration</h3>
@@ -160,7 +160,7 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
         </div>
       </div>
 
-      {/* Action History + Live Response Log */}
+      {}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-gray-900/70 border border-gray-800 rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
@@ -221,7 +221,7 @@ export default function Simulator({ onSendRequest, onSimulateLoad, connected, lo
         </div>
       </div>
 
-      {/* Live Response Log for the simulated endpoints */}
+      {}
       <div className="bg-gray-900/70 border border-gray-800 rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-800">
           <h3 className="text-sm font-semibold text-white">Responses for Simulated Endpoints</h3>

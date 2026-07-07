@@ -106,15 +106,12 @@ int server_pool_dec_connections(ServerPool *pool, const char *id) {
     return 0;
 }
 
-/* Update EMA of response latency for a server.
-   alpha=0.2: slow-moving average — resists single outliers,
-   converges in ~10 requests. First observation seeds directly. */
 void server_pool_update_latency(ServerPool *pool, const char *id, double latency_ms) {
     compat_mutex_lock(&pool->lock);
     Server *s = server_pool_find(pool, id);
     if (s) {
         if (s->ema_latency == 0.0) {
-            s->ema_latency = latency_ms;  /* seed on first real observation */
+            s->ema_latency = latency_ms;  
         } else {
             s->ema_latency = 0.2 * latency_ms + 0.8 * s->ema_latency;
         }
@@ -122,7 +119,6 @@ void server_pool_update_latency(ServerPool *pool, const char *id, double latency
     compat_mutex_unlock(&pool->lock);
 }
 
-/* Compute composite score: weighted blend of load, cpu, memory, and history */
 float compute_score(Server *s) {
     if (!s) return 999.0f;
     double load = s->max_connections > 0
@@ -140,7 +136,6 @@ float compute_score(Server *s) {
     return (float)s->score;
 }
 
-/* Update status based on current CPU/memory thresholds */
 void update_status(Server *s) {
     if (!s) return;
     if (s->cpu > 90.0 || s->memory > 90.0) {
@@ -153,7 +148,6 @@ void update_status(Server *s) {
     compute_score(s);
 }
 
-/* Getters */
 Server *get_servers(ServerPool *pool) {
     return pool->servers;
 }
